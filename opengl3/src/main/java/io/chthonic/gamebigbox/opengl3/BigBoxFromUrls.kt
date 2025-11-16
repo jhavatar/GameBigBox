@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.opengl.GLSurfaceView
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,7 +39,6 @@ fun BigBoxFromUrls(
     val context = LocalContext.current
     var bitmaps by remember { mutableStateOf<List<Bitmap>?>(null) }
     var texturesUploaded by remember { mutableStateOf(false) }
-    var renderer by remember { mutableStateOf<TexturedCuboidRenderer?>(null) }
 
     // Load all six bitmaps asynchronously (IO thread)
     LaunchedEffect(urls) {
@@ -55,6 +55,7 @@ fun BigBoxFromUrls(
                 texturesUploaded = true
             }
         }
+
         AndroidView(
             factory = { ctx ->
                 GLSurfaceView(ctx).apply {
@@ -70,28 +71,71 @@ fun BigBoxFromUrls(
                     var previousX = 0f
                     var previousY = 0f
 
-                    setOnTouchListener { _, event ->
-                        when (event.action) {
-                            MotionEvent.ACTION_DOWN -> {
-                                previousX = event.x
-                                previousY = event.y
+                    var isScaling = false
+                    var scaleFactor = 1f
+                    val scaleDetector = ScaleGestureDetector(
+                        context,
+                        object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                            override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+                                isScaling = true
+                                return true
                             }
 
-                            MotionEvent.ACTION_MOVE -> {
-                                val dx = event.x - previousX
-                                val dy = event.y - previousY
-                                previousX = event.x
-                                previousY = event.y
-                                renderer?.handleTouchDrag(dx, dy)
+                            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                                scaleFactor =
+                                    (scaleFactor * detector.scaleFactor).coerceIn(0.5f, 3f)
+                                queueEvent {
+                                    renderer.zoomFactor = scaleFactor
+                                }
+                                return true
                             }
+
+                            override fun onScaleEnd(detector: ScaleGestureDetector) {
+                                isScaling = false
+                            }
+                        }
+                    )
+
+                    var isMoving = false
+                    setOnTouchListener { _, event ->
+                        scaleDetector.onTouchEvent(event)
+
+                        if (!isScaling) {
+                            when (event.action) {
+                                MotionEvent.ACTION_DOWN -> {
+                                    isMoving = true
+                                    previousX = event.x
+                                    previousY = event.y
+                                }
+
+                                MotionEvent.ACTION_MOVE -> {
+                                    if (isMoving) {
+                                        val dx = event.x - previousX
+                                        val dy = event.y - previousY
+                                        previousX = event.x
+                                        previousY = event.y
+                                        queueEvent {
+                                            renderer?.handleTouchDrag(dx, dy)
+                                        }
+                                    }
+                                }
+
+                                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                                    isMoving = false
+                                }
+                            }
+                        } else {
+                            isMoving = false
                         }
                         true
                     }
                 }
             },
             update = { glView ->
-                renderer.currentGlossValue = glossLevel.glossValue
-                renderer.autoRotate = autoRotate
+                glView.queueEvent {
+                    renderer.currentGlossValue = glossLevel.glossValue
+                    renderer.autoRotate = autoRotate
+                }
             },
             modifier = modifier,
             onRelease = { glView ->

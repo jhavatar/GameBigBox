@@ -9,6 +9,9 @@ import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
 private const val ROTATION_SENSITIVITY = 0.4f
+private const val DEFAULT_ZOOM = 8f
+private const val DEFAULT_ZOOM_FACTOR = 1f // 1x = normal
+private const val REFRESH_LAST_ZOOM_FACTOR = -1f // force refresh on first frame
 
 /**
  * OpenGL ES 3.0 renderer for the Cuboid class.
@@ -22,6 +25,8 @@ internal class TexturedCuboidRenderer(
     private var cuboid: Cuboid? = null
     var currentGlossValue: Float = GlossLevel.SEMI_GLOSS.glossValue
     var autoRotate: Boolean = true
+    var zoomFactor: Float = DEFAULT_ZOOM_FACTOR
+    private var lastZoomFactor: Float = REFRESH_LAST_ZOOM_FACTOR
 
     // Matrices for transformations
     private val viewMatrix = FloatArray(16)
@@ -47,18 +52,8 @@ internal class TexturedCuboidRenderer(
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         GLES30.glViewport(0, 0, width, height)
         val ratio = width.toFloat() / height
-        // lens
-        Matrix.perspectiveM(projMatrix, 0, 45f, ratio, 0.1f, 100f)
-        // position: at position 0,0,8 looking at 0,0,0 where y-axis is "up"
-        Matrix.setLookAtM(
-            viewMatrix,
-            0,
-            0f, 0f, 8f,
-            0f, 0f, 0f,
-            0f, 1f, 0f,
-        )
-        // combine
-        Matrix.multiplyMM(vpMatrix, 0, projMatrix, 0, viewMatrix, 0)
+        Matrix.perspectiveM(projMatrix, 0, 35f, ratio, 0.1f, 100f)
+        lastZoomFactor = REFRESH_LAST_ZOOM_FACTOR
     }
 
     override fun onDrawFrame(gl: GL10?) {
@@ -66,17 +61,26 @@ internal class TexturedCuboidRenderer(
         if (autoRotate) {
             rotate(ROTATION_SENSITIVITY, 0f)
         }
+
+        // Recalculate camera distance based on zoom only when zoom changes
+        if (zoomFactor != lastZoomFactor) {
+            val cameraZ = DEFAULT_ZOOM / zoomFactor
+            Matrix.setLookAtM(
+                viewMatrix,
+                0,
+                0f, 0f, cameraZ,
+                0f, 0f, 0f,
+                0f, 1f, 0f
+            )
+            Matrix.multiplyMM(vpMatrix, 0, projMatrix, 0, viewMatrix, 0)
+            lastZoomFactor = zoomFactor
+        }
+
         cuboid?.draw(vpMatrix, angleX, angleY, currentGlossValue)
     }
 
     fun handleTouchDrag(deltaX: Float, deltaY: Float) {
         rotate(deltaX, deltaY)
-        // Simple rotation sensitivity tuning
-        angleY += deltaX * ROTATION_SENSITIVITY
-        angleX += deltaY * ROTATION_SENSITIVITY
-
-        // clamp angles if desired
-        angleX = angleX.coerceIn(-90f, 90f)
     }
 
     fun release() {

@@ -19,10 +19,10 @@ import java.nio.ShortBuffer
 internal class Cuboid(
     bitmaps: List<Bitmap>,
     // Box dimensions (half-sizes)
-    val halfW: Float = 1.0f,    // width  (X axis)
-    val halfH: Float = 1.25f,    // height (Y axis)
-    val halfD: Float = 0.17f,    // depth  (Z axis)
-    onUploaded: (() -> Unit)? = null
+    val halfW: Float = 0.778f,    // width  (X axis)
+    val halfH: Float = 1.0f,    // height (Y axis)
+    val halfD: Float = 0.222f,    // depth  (Z axis)
+    onUploaded: (() -> Unit)? = null,
 ) {
 
     private val vertexBuffer: FloatBuffer
