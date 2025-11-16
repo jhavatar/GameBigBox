@@ -1,6 +1,5 @@
 package io.chthonic.gamebigbox.opengl3
 
-import android.content.Context
 import android.graphics.Bitmap
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
@@ -15,13 +14,12 @@ private const val ROTATION_SENSITIVITY = 0.4f
  * OpenGL ES 3.0 renderer for the Cube class.
  * Handles camera setup, projection, rotation, and draw loop.
  */
-class TexturedCubeRenderer(
-    private val ctx: Context,
+class TexturedCuboidRenderer(
     private val bitmaps: List<Bitmap>,
     private val onTexturesUploaded: (() -> Unit)? = null
 ) : GLSurfaceView.Renderer {
 
-    private lateinit var cube: Cube
+    private lateinit var cuboid: Cuboid
 
     // Matrices for transformations
     private val viewMatrix = FloatArray(16)
@@ -39,7 +37,7 @@ class TexturedCubeRenderer(
         // by default assumed GLES30.glFrontFace(GLES30.GL_CCW)
 
         // Upload all six textures immediately
-        cube = Cube(bitmaps, onUploaded = onTexturesUploaded)
+        cuboid = Cuboid(bitmaps, onUploaded = onTexturesUploaded)
 
         Log.d("TexturedCubeRenderer", "OpenGL ES ${GLES30.glGetString(GLES30.GL_VERSION)} ready.")
     }
@@ -64,7 +62,7 @@ class TexturedCubeRenderer(
     override fun onDrawFrame(gl: GL10?) {
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT or GLES30.GL_DEPTH_BUFFER_BIT)
         rotate(ROTATION_SENSITIVITY, 0f)
-        cube.draw(vpMatrix, angleX, angleY)
+        cuboid.draw(vpMatrix, angleX, angleY)
     }
 
     fun handleTouchDrag(deltaX: Float, deltaY: Float) {

@@ -12,7 +12,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
-import io.chthonic.gamebigbox.opengl3.BigBoxCubeFromUrls
+import io.chthonic.gamebigbox.opengl3.BigBoxFromUrls
 import io.chthonic.gamebigbox.ui.theme.GameBigBoxTheme
 
 class MainActivity : ComponentActivity() {
@@ -28,7 +28,7 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.padding(innerPadding),
                         )
 
-                        BigBoxCubeFromUrls(
+                        BigBoxFromUrls(
                             listOf(
                                 "https://rickandmortyapi.com/api/character/avatar/1.jpeg",
                                 "https://rickandmortyapi.com/api/character/avatar/2.jpeg",

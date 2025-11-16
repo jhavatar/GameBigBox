@@ -11,9 +11,17 @@ import java.nio.ShortBuffer
 
 /**
  * OpenGL ES 3.0 cube renderer — six independent textures (front/back/left/right/top/bottom).
+ * @param halfW half of the dimension of the width. for a cube it is 1f
+ * @param halfH half of the dimension of the height. for a cube it is 1f
+ * @param halfD half of the dimension of the depth. for a cube it is 1f
+ * @param onUploaded callback after textures uploaded to GPU memory
  */
-class Cube(
+class Cuboid(
     bitmaps: List<Bitmap>,
+    // Box dimensions (half-sizes)
+    val halfW: Float = 1.0f,    // width  (X axis)
+    val halfH: Float = 1.25f,    // height (Y axis)
+    val halfD: Float = 0.17f,    // depth  (Z axis)
     onUploaded: (() -> Unit)? = null
 ) {
 
@@ -23,31 +31,27 @@ class Cube(
     private val textures = IntArray(6)
     private val program: Int
 
-    // 6 faces = 2 triangles × 3 vertices
-    private val faces = arrayOf(
-        shortArrayOf(0, 2, 1, 1, 2, 3), // front  ✅ reversed for CCW
-        shortArrayOf(5, 7, 4, 4, 7, 6), // back   ✅ reversed
-        shortArrayOf(4, 6, 0, 0, 6, 2), // left
-        shortArrayOf(1, 3, 5, 5, 3, 7), // right
-        shortArrayOf(4, 0, 5, 5, 0, 1), // top
-        shortArrayOf(2, 6, 3, 3, 6, 7)  // bottom
-    )
-
     init {
         // 24 vertices (4 per face)
         val vertices = floatArrayOf(
             // Front (+Z)
-            -1f, 1f, 1f, 1f, 1f, 1f, -1f, -1f, 1f, 1f, -1f, 1f,
+            -halfW, halfH, halfD, halfW, halfH, halfD,
+            -halfW, -halfH, halfD, halfW, -halfH, halfD,
             // Back (−Z)
-            1f, 1f, -1f, -1f, 1f, -1f, 1f, -1f, -1f, -1f, -1f, -1f,
+            halfW, halfH, -halfD, -halfW, halfH, -halfD,
+            halfW, -halfH, -halfD, -halfW, -halfH, -halfD,
             // Left (−X)
-            -1f, 1f, -1f, -1f, 1f, 1f, -1f, -1f, -1f, -1f, -1f, 1f,
+            -halfW, halfH, -halfD, -halfW, halfH, halfD,
+            -halfW, -halfH, -halfD, -halfW, -halfH, halfD,
             // Right (+X)
-            1f, 1f, 1f, 1f, 1f, -1f, 1f, -1f, 1f, 1f, -1f, -1f,
+            halfW, halfH, halfD, halfW, halfH, -halfD,
+            halfW, -halfH, halfD, halfW, -halfH, -halfD,
             // Top (+Y)
-            -1f, 1f, -1f, 1f, 1f, -1f, -1f, 1f, 1f, 1f, 1f, 1f,
+            -halfW, halfH, -halfD, halfW, halfH, -halfD,
+            -halfW, halfH, halfD, halfW, halfH, halfD,
             // Bottom (−Y)
-            -1f, -1f, 1f, 1f, -1f, 1f, -1f, -1f, -1f, 1f, -1f, -1f
+            -halfW, -halfH, halfD, halfW, -halfH, halfD,
+            -halfW, -halfH, -halfD, halfW, -halfH, -halfD,
         )
 
         // 24 UVs (4 per face)
@@ -106,7 +110,7 @@ class Cube(
 
         program = createProgram(vShader, fShader)
 
-        // --- Upload 6 Textures ---
+        // --- Upload 6 textures to GPU memory---
         GLES30.glGenTextures(6, textures, 0)
         for (i in 0 until 6) {
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, textures[i])

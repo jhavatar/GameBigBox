@@ -8,7 +8,12 @@ import android.view.MotionEvent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -21,17 +26,17 @@ import timber.log.Timber
 
 /**
  * Compose wrapper that loads 6 textures from URLs and displays them
- * on a 3D cube rendered with OpenGL ES 3.0.
+ * on a 3D cuboid representing a PC game's big box -- rendered with OpenGL ES 3.0.
  */
 @Composable
-fun BigBoxCubeFromUrls(
+fun BigBoxFromUrls(
     urls: List<String>,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     var bitmaps by remember { mutableStateOf<List<Bitmap>?>(null) }
     var texturesUploaded by remember { mutableStateOf(false) }
-    var renderer by remember { mutableStateOf<TexturedCubeRenderer?>(null) }
+    var renderer by remember { mutableStateOf<TexturedCuboidRenderer?>(null) }
 
     // Load all six bitmaps asynchronously (IO thread)
     LaunchedEffect(urls) {
@@ -50,7 +55,7 @@ fun BigBoxCubeFromUrls(
                     setEGLContextClientVersion(3)
 
                     // 🔹 Use the GLES30-based renderer
-                    val r = TexturedCubeRenderer(ctx, bitmaps!!) { texturesUploaded = true }
+                    val r = TexturedCuboidRenderer(bitmaps!!) { texturesUploaded = true }
                     renderer = r
                     setRenderer(r)
 
@@ -66,6 +71,7 @@ fun BigBoxCubeFromUrls(
                                 previousX = event.x
                                 previousY = event.y
                             }
+
                             MotionEvent.ACTION_MOVE -> {
                                 val dx = event.x - previousX
                                 val dy = event.y - previousY
