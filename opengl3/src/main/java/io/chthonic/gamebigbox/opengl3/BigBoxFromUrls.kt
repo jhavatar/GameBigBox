@@ -31,27 +31,32 @@ import timber.log.Timber
  */
 @Composable
 fun BigBoxFromUrls(
-    urls: List<String>,
+    textureUrls: BoxTextureUrls,
     modifier: Modifier = Modifier,
     glossLevel: GlossLevel = GlossLevel.SEMI_GLOSS,
     autoRotate: Boolean = true,
 ) {
     val context = LocalContext.current
-    var bitmaps by remember { mutableStateOf<List<Bitmap>?>(null) }
+    var textureBitmaps by remember { mutableStateOf<BoxTextureBitmaps?>(null) }
     var texturesUploaded by remember { mutableStateOf(false) }
 
     // Load all six bitmaps asynchronously (IO thread)
-    LaunchedEffect(urls) {
-        bitmaps = withContext(Dispatchers.IO) {
-            urls.mapNotNull { loadBitmapFromUrl(context, it) }
+    LaunchedEffect(textureUrls) {
+        try {
+            textureBitmaps = withContext(Dispatchers.IO) {
+                textureUrls.toBitmap { url -> loadBitmapFromUrl(context, url) }
+            }
+            Timber.d("Loaded bitmaps $textureBitmaps from URLs")
+        } catch (e: BitmapLoadingFailedException) {
+            Timber.e(e, "Loading bitmaps failed")
+            textureBitmaps = null
         }
-        Timber.d("Loaded ${bitmaps?.size} bitmaps from URLs")
     }
 
     // Once all six bitmaps are ready, create GL surface
-    if (bitmaps != null && bitmaps!!.size == 6) {
+    textureBitmaps?.let { bitmaps ->
         val renderer = remember {
-            TexturedCuboidRenderer(bitmaps!!) {
+            TexturedCuboidRenderer(bitmaps) {
                 texturesUploaded = true
             }
         }
@@ -150,11 +155,11 @@ fun BigBoxFromUrls(
         if (texturesUploaded) {
             LaunchedEffect(Unit) {
                 Timber.d("Recycling bitmaps after texture upload")
-                bitmaps?.forEach { if (!it.isRecycled) it.recycle() }
+                bitmaps.toList().forEach { if (!it.isRecycled) it.recycle() }
                 // do NOT set bitmaps = null — keeps the GL surface alive
             }
         }
-    } else {
+    } ?: run {
         // 🔹 Loading indicator while images download
         Box(
             Modifier.fillMaxSize(),
@@ -168,7 +173,7 @@ fun BigBoxFromUrls(
 /**
  * Loads an image from a URL into a Bitmap using Coil, safely off the UI thread.
  */
-private suspend fun loadBitmapFromUrl(context: Context, url: String): Bitmap? {
+private suspend fun loadBitmapFromUrl(context: Context, url: String): Bitmap {
     return try {
         val loader = ImageLoader(context)
         val request = ImageRequest.Builder(context)
@@ -176,11 +181,11 @@ private suspend fun loadBitmapFromUrl(context: Context, url: String): Bitmap? {
             .allowHardware(false)
             .build()
         val result = loader.execute(request)
-        (result.drawable as? BitmapDrawable)?.bitmap.also {
-            Timber.v("Loaded bitmap from $url -> ${it != null}")
+        requireNotNull((result.drawable as? BitmapDrawable)?.bitmap).also {
+            Timber.v("Loaded bitmap from $url -> $it")
         }
     } catch (e: Exception) {
         Timber.e(e, "Failed to load bitmap from $url")
-        null
+        throw BitmapLoadingFailedException()
     }
 }

@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import io.chthonic.gamebigbox.opengl3.BigBoxFromUrls
+import io.chthonic.gamebigbox.opengl3.FullBoxTextureUrls
 import io.chthonic.gamebigbox.ui.theme.GameBigBoxTheme
 
 class MainActivity : ComponentActivity() {
@@ -29,14 +30,22 @@ class MainActivity : ComponentActivity() {
                         )
 
                         BigBoxFromUrls(
-                            listOf(
-                                "https://rickandmortyapi.com/api/character/avatar/1.jpeg",
-                                "https://rickandmortyapi.com/api/character/avatar/2.jpeg",
-                                "https://rickandmortyapi.com/api/character/avatar/3.jpeg",
-                                "https://rickandmortyapi.com/api/character/avatar/4.jpeg",
-                                "https://rickandmortyapi.com/api/character/avatar/5.jpeg",
-                                "https://rickandmortyapi.com/api/character/avatar/6.jpeg"
+                            FullBoxTextureUrls(
+                                front = "https://bigboxcollection.com/images/textures/front/Doom2.webp",
+                                back = "https://bigboxcollection.com/images/textures/back/Doom2.webp",
+                                top = "https://bigboxcollection.com/images/textures/top/Doom2.webp",
+                                bottom = "https://bigboxcollection.com/images/textures/bottom/Doom2.webp",
+                                left = "https://bigboxcollection.com/images/textures/left/Doom2.webp",
+                                right = "https://bigboxcollection.com/images/textures/right/Doom2.webp",
                             )
+//                            FullBoxTextureUrls(
+//                                front = "https://rickandmortyapi.com/api/character/avatar/1.jpeg",
+//                                back = "https://rickandmortyapi.com/api/character/avatar/2.jpeg",
+//                                top = "https://rickandmortyapi.com/api/character/avatar/3.jpeg",
+//                                bottom = "https://rickandmortyapi.com/api/character/avatar/4.jpeg",
+//                                left = "https://rickandmortyapi.com/api/character/avatar/5.jpeg",
+//                                right = "https://rickandmortyapi.com/api/character/avatar/6.jpeg"
+//                            )
                         )
                     }
                 }

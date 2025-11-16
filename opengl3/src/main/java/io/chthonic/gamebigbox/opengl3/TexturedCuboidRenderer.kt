@@ -18,7 +18,7 @@ private const val REFRESH_LAST_ZOOM_FACTOR = -1f // force refresh on first frame
  * Handles camera setup, projection, rotation, and draw loop.
  */
 internal class TexturedCuboidRenderer(
-    private val bitmaps: List<Bitmap>,
+    private val bitmaps: BoxTextureBitmaps,
     private val onTexturesUploaded: (() -> Unit)? = null
 ) : GLSurfaceView.Renderer {
 
@@ -44,7 +44,7 @@ internal class TexturedCuboidRenderer(
         // by default assumed GLES30.glFrontFace(GLES30.GL_CCW)
 
         // Upload all six textures immediately
-        cuboid = Cuboid(bitmaps, onUploaded = onTexturesUploaded)
+        cuboid = Cuboid(bitmaps.toList(), onUploaded = onTexturesUploaded)
 
         Log.d("TexturedCubeRenderer", "OpenGL ES ${GLES30.glGetString(GLES30.GL_VERSION)} ready.")
     }
