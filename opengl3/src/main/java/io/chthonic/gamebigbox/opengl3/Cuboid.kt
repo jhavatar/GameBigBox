@@ -16,7 +16,7 @@ import java.nio.ShortBuffer
  * @param halfD half of the dimension of the depth. for a cube it is 1f
  * @param onUploaded callback after textures uploaded to GPU memory
  */
-class Cuboid(
+internal class Cuboid(
     bitmaps: List<Bitmap>,
     // Box dimensions (half-sizes)
     val halfW: Float = 1.0f,    // width  (X axis)
@@ -27,6 +27,7 @@ class Cuboid(
 
     private val vertexBuffer: FloatBuffer
     private val texBuffer: FloatBuffer
+    private val normalBuffer: FloatBuffer
     private val indexBuffer: ShortBuffer
     private val textures = IntArray(6)
     private val program: Int
@@ -70,6 +71,22 @@ class Cuboid(
             0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f
         )
 
+        // 24 normals (one per vertex)
+        val normals = floatArrayOf(
+            // Front
+            0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f,
+            // Back
+            0f, 0f, -1f, 0f, 0f, -1f, 0f, 0f, -1f, 0f, 0f, -1f,
+            // Left
+            -1f, 0f, 0f, -1f, 0f, 0f, -1f, 0f, 0f, -1f, 0f, 0f,
+            // Right
+            1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f,
+            // Top
+            0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f,
+            // Bottom
+            0f, -1f, 0f, 0f, -1f, 0f, 0f, -1f, 0f, 0f, -1f, 0f
+        )
+
         // 36 indices (6 faces × 2 triangles × 3 vertices)
         val indices = shortArrayOf(
             0, 2, 1, 1, 2, 3,      // Front
@@ -82,29 +99,62 @@ class Cuboid(
 
         vertexBuffer = vertices.toFloatBuffer()
         texBuffer = texCoords.toFloatBuffer()
+        normalBuffer = normals.toFloatBuffer()
         indexBuffer = indices.toShortBuffer()
 
-        // --- GLSL ES 3.00 shaders ---
+        // --- Shaders with glossy lighting ---
         val vShader = """
             #version 300 es
-            uniform mat4 uMVP;
             layout(location = 0) in vec4 aPos;
             layout(location = 1) in vec2 aTex;
+            layout(location = 2) in vec3 aNormal;
+
+            uniform mat4 uMVP;
+            uniform mat4 uModel;
+
             out vec2 vTex;
+            out vec3 vNormal;
+            out vec3 vFragPos;
+
             void main() {
                 gl_Position = uMVP * aPos;
                 vTex = aTex;
+                vFragPos = vec3(uModel * aPos);
+                vNormal = mat3(transpose(inverse(uModel))) * aNormal;
             }
         """.trimIndent()
 
         val fShader = """
             #version 300 es
             precision mediump float;
+
             uniform sampler2D uTex;
+            uniform vec3 uLightPos;
+            uniform vec3 uViewPos;
+            uniform vec3 uLightColor;
+            uniform float uMaterialGloss; // 0=matte, 1=glossy
+
             in vec2 vTex;
+            in vec3 vNormal;
+            in vec3 vFragPos;
+
             out vec4 fragColor;
+
             void main() {
-                fragColor = texture(uTex, vTex);
+                vec3 texColor = texture(uTex, vTex).rgb;
+                vec3 norm = normalize(vNormal);
+                vec3 lightDir = normalize(uLightPos - vFragPos);
+                vec3 viewDir  = normalize(uViewPos - vFragPos);
+                vec3 reflectDir = reflect(-lightDir, norm);
+
+                float diff = max(dot(norm, lightDir), 0.0);
+
+                float shininess = mix(8.0, 128.0, uMaterialGloss);
+                float specPower = mix(0.05, 1.0, uMaterialGloss);
+                float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess) * specPower;
+
+                vec3 result = texColor * (0.4 + 0.6 * diff) + uLightColor * spec;
+                fragColor = vec4(result, 1.0);
             }
         """.trimIndent()
 
@@ -131,39 +181,70 @@ class Cuboid(
         onUploaded?.invoke()
     }
 
-    fun draw(vp: FloatArray, rotX: Float, rotY: Float) {
+    /**
+     * @param gloss glossiness between 0f and 1f.
+     * 0.0f	diffuse, flat -- e.g. matte raw cardboard mid-80s Sierra, SSI
+     * 0.3f	faint wide sheen -- e.g. semi-gloss paper
+     * 0.6f	soft reflection -- e.g.	laminated mid-90s EA/Interplay boxes
+     * 1.0f	tight bright highlight -- e.g. full-gloss Origin / Wing Commander III box
+     */
+    fun draw(vp: FloatArray, rotX: Float, rotY: Float, gloss: Float) {
         GLES30.glUseProgram(program)
 
         // Attribute locations (bound by layout qualifiers)
         GLES30.glEnableVertexAttribArray(0)
         GLES30.glEnableVertexAttribArray(1)
+        GLES30.glEnableVertexAttribArray(2)
+
         GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, 0, vertexBuffer)
         GLES30.glVertexAttribPointer(1, 2, GLES30.GL_FLOAT, false, 0, texBuffer)
+        GLES30.glVertexAttribPointer(2, 3, GLES30.GL_FLOAT, false, 0, normalBuffer)
 
-        val mvpHandle = GLES30.glGetUniformLocation(program, "uMVP")
+        val uMVP = GLES30.glGetUniformLocation(program, "uMVP")
+        val uModel = GLES30.glGetUniformLocation(program, "uModel")
+        val uLightPos = GLES30.glGetUniformLocation(program, "uLightPos")
+        val uViewPos = GLES30.glGetUniformLocation(program, "uViewPos")
+        val uLightColor = GLES30.glGetUniformLocation(program, "uLightColor")
+        val uMaterialGloss = GLES30.glGetUniformLocation(program, "uMaterialGloss")
 
         val model = FloatArray(16)
         val mvp = FloatArray(16)
         Matrix.setIdentityM(model, 0)
         Matrix.rotateM(model, 0, rotX, 1f, 0f, 0f)
         Matrix.rotateM(model, 0, rotY, 0f, 1f, 0f)
+        Matrix.multiplyMM(mvp, 0, vp, 0, model, 0)
 
-        // Draw each face (6 textures)
+        GLES30.glUniformMatrix4fv(uMVP, 1, false, mvp, 0)
+        GLES30.glUniformMatrix4fv(uModel, 1, false, model, 0)
+
+        // Simple static light and camera
+        GLES30.glUniform3f(uLightPos, 3f, 3f, 5f)
+        GLES30.glUniform3f(uViewPos, 0f, 0f, 4f)
+        GLES30.glUniform3f(uLightColor, 1f, 1f, 1f)
+        GLES30.glUniform1f(uMaterialGloss, gloss.coerceIn(0f, 1f))
+
+        // Draw each textured face
         for (i in 0 until 6) {
-            Matrix.multiplyMM(mvp, 0, vp, 0, model, 0)
-            GLES30.glUniformMatrix4fv(mvpHandle, 1, false, mvp, 0)
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, textures[i])
             indexBuffer.position(i * 6)
-            GLES30.glDrawElements(
-                GLES30.GL_TRIANGLES,
-                6,
-                GLES30.GL_UNSIGNED_SHORT,
-                indexBuffer
-            )
+            GLES30.glDrawElements(GLES30.GL_TRIANGLES, 6, GLES30.GL_UNSIGNED_SHORT, indexBuffer)
         }
 
         GLES30.glDisableVertexAttribArray(0)
         GLES30.glDisableVertexAttribArray(1)
+        GLES30.glDisableVertexAttribArray(2)
+    }
+
+    /**
+     * Important: This must run after the GLSurfaceView’s context is active,
+     * typically inside the renderer’s onSurfaceDestroyed() or from queueEvent { ... } on the GLSurfaceView.
+     */
+    fun release() {
+        // Must be called on the GL thread
+        if (textures.isNotEmpty()) {
+            GLES30.glDeleteTextures(textures.size, textures, 0)
+        }
+        GLES30.glDeleteProgram(program)
     }
 
     private fun createProgram(vs: String, fs: String): Int {

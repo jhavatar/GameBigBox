@@ -11,15 +11,17 @@ import javax.microedition.khronos.opengles.GL10
 private const val ROTATION_SENSITIVITY = 0.4f
 
 /**
- * OpenGL ES 3.0 renderer for the Cube class.
+ * OpenGL ES 3.0 renderer for the Cuboid class.
  * Handles camera setup, projection, rotation, and draw loop.
  */
-class TexturedCuboidRenderer(
+internal class TexturedCuboidRenderer(
     private val bitmaps: List<Bitmap>,
     private val onTexturesUploaded: (() -> Unit)? = null
 ) : GLSurfaceView.Renderer {
 
-    private lateinit var cuboid: Cuboid
+    private var cuboid: Cuboid? = null
+    var currentGlossValue: Float = GlossLevel.SEMI_GLOSS.glossValue
+    var autoRotate: Boolean = true
 
     // Matrices for transformations
     private val viewMatrix = FloatArray(16)
@@ -61,8 +63,10 @@ class TexturedCuboidRenderer(
 
     override fun onDrawFrame(gl: GL10?) {
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT or GLES30.GL_DEPTH_BUFFER_BIT)
-        rotate(ROTATION_SENSITIVITY, 0f)
-        cuboid.draw(vpMatrix, angleX, angleY)
+        if (autoRotate) {
+            rotate(ROTATION_SENSITIVITY, 0f)
+        }
+        cuboid?.draw(vpMatrix, angleX, angleY, currentGlossValue)
     }
 
     fun handleTouchDrag(deltaX: Float, deltaY: Float) {
@@ -73,6 +77,11 @@ class TexturedCuboidRenderer(
 
         // clamp angles if desired
         angleX = angleX.coerceIn(-90f, 90f)
+    }
+
+    fun release() {
+        cuboid?.release()
+        cuboid = null
     }
 
     private fun rotate(deltaX: Float, deltaY: Float) {

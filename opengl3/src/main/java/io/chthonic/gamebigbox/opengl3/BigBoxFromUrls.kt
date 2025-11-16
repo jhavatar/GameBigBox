@@ -31,7 +31,9 @@ import timber.log.Timber
 @Composable
 fun BigBoxFromUrls(
     urls: List<String>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    glossLevel: GlossLevel = GlossLevel.SEMI_GLOSS,
+    autoRotate: Boolean = true,
 ) {
     val context = LocalContext.current
     var bitmaps by remember { mutableStateOf<List<Bitmap>?>(null) }
@@ -48,6 +50,11 @@ fun BigBoxFromUrls(
 
     // Once all six bitmaps are ready, create GL surface
     if (bitmaps != null && bitmaps!!.size == 6) {
+        val renderer = remember {
+            TexturedCuboidRenderer(bitmaps!!) {
+                texturesUploaded = true
+            }
+        }
         AndroidView(
             factory = { ctx ->
                 GLSurfaceView(ctx).apply {
@@ -55,9 +62,7 @@ fun BigBoxFromUrls(
                     setEGLContextClientVersion(3)
 
                     // 🔹 Use the GLES30-based renderer
-                    val r = TexturedCuboidRenderer(bitmaps!!) { texturesUploaded = true }
-                    renderer = r
-                    setRenderer(r)
+                    setRenderer(renderer)
 
                     renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
 
@@ -84,7 +89,17 @@ fun BigBoxFromUrls(
                     }
                 }
             },
-            modifier = modifier
+            update = { glView ->
+                renderer.currentGlossValue = glossLevel.glossValue
+                renderer.autoRotate = autoRotate
+            },
+            modifier = modifier,
+            onRelease = { glView ->
+                glView.queueEvent {
+                    renderer.release() // delete textures/programs safely on GL thread
+                }
+                glView.onPause()
+            }
         )
 
         // Cleanup heap memory (after upload, but no recomposition)
@@ -109,7 +124,7 @@ fun BigBoxFromUrls(
 /**
  * Loads an image from a URL into a Bitmap using Coil, safely off the UI thread.
  */
-suspend fun loadBitmapFromUrl(context: Context, url: String): Bitmap? {
+private suspend fun loadBitmapFromUrl(context: Context, url: String): Bitmap? {
     return try {
         val loader = ImageLoader(context)
         val request = ImageRequest.Builder(context)
