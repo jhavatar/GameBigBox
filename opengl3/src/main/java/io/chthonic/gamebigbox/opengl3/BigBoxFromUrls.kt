@@ -67,6 +67,15 @@ fun BigBoxFromUrls(
                     // 🔹 Request OpenGL ES 3.0 context
                     setEGLContextClientVersion(3)
 
+                    // ✅ request RGBA8888 surface with depth buffer
+                    setEGLConfigChooser(8, 8, 8, 8, 16, 0)
+
+                    // ✅ make the surface translucent to compositor
+                    holder.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
+
+                    // ✅ draw above or within Compose as needed
+                    setZOrderOnTop(true)  // or setZOrderMediaOverlay(true)
+
                     // 🔹 Use the GLES30-based renderer
                     setRenderer(renderer)
 
