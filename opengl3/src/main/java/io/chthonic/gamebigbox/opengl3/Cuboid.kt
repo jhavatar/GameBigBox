@@ -10,7 +10,7 @@ import java.nio.FloatBuffer
 import java.nio.ShortBuffer
 
 /**
- * OpenGL ES 3.0 cube renderer — six independent textures (front/back/left/right/top/bottom).
+ * OpenGL ES 3.0 cuboid renderer — six independent textures (front/back/left/right/top/bottom).
  * @param halfW half of the dimension of the width. for a cube it is 1f
  * @param halfH half of the dimension of the height. for a cube it is 1f
  * @param halfD half of the dimension of the depth. for a cube it is 1f
@@ -18,10 +18,9 @@ import java.nio.ShortBuffer
  */
 internal class Cuboid(
     bitmaps: List<Bitmap>,
-    // Box dimensions (half-sizes)
-    val halfW: Float = 0.778f,    // width  (X axis)
-    val halfH: Float = 1.0f,    // height (Y axis)
-    val halfD: Float = 0.222f,    // depth  (Z axis)
+    val halfW: Float = 0.778f,
+    val halfH: Float = 1.0f,
+    val halfD: Float = 0.222f,
     onUploaded: (() -> Unit)? = null,
 ) {
 
@@ -31,6 +30,10 @@ internal class Cuboid(
     private val indexBuffer: ShortBuffer
     private val textures = IntArray(6)
     private val program: Int
+
+    // 2D shadow
+    private val shadowProgram: Int
+    private val shadowVertexBuf: FloatBuffer
 
     init {
         // 24 vertices (4 per face)
@@ -102,21 +105,18 @@ internal class Cuboid(
         normalBuffer = normals.toFloatBuffer()
         indexBuffer = indices.toShortBuffer()
 
-        // --- Shaders with glossy lighting ---
+        // Shaders with glossy lighting
         val vShader = """
             #version 300 es
             layout(location = 0) in vec4 aPos;
             layout(location = 1) in vec2 aTex;
             layout(location = 2) in vec3 aNormal;
-
             uniform mat4 uMVP;
             uniform mat4 uModel;
-
             out vec2 vTex;
             out vec3 vNormal;
             out vec3 vFragPos;
-
-            void main() {
+            void main(){
                 gl_Position = uMVP * aPos;
                 vTex = aTex;
                 vFragPos = vec3(uModel * aPos);
@@ -127,40 +127,66 @@ internal class Cuboid(
         val fShader = """
             #version 300 es
             precision mediump float;
-
             uniform sampler2D uTex;
             uniform vec3 uLightPos;
             uniform vec3 uViewPos;
             uniform vec3 uLightColor;
-            uniform float uMaterialGloss; // 0=matte, 1=glossy
-
+            uniform float uMaterialGloss;
             in vec2 vTex;
             in vec3 vNormal;
             in vec3 vFragPos;
-
             out vec4 fragColor;
-
-            void main() {
+            void main(){
                 vec3 texColor = texture(uTex, vTex).rgb;
                 vec3 norm = normalize(vNormal);
                 vec3 lightDir = normalize(uLightPos - vFragPos);
-                vec3 viewDir  = normalize(uViewPos - vFragPos);
+                vec3 viewDir = normalize(uViewPos - vFragPos);
                 vec3 reflectDir = reflect(-lightDir, norm);
-
                 float diff = max(dot(norm, lightDir), 0.0);
-
-                float shininess = mix(8.0, 128.0, uMaterialGloss);
-                float specPower = mix(0.05, 1.0, uMaterialGloss);
+                float shininess = mix(8.0,128.0,uMaterialGloss);
+                float specPower = mix(0.05,1.0,uMaterialGloss);
                 float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess) * specPower;
-
                 vec3 result = texColor * (0.4 + 0.6 * diff) + uLightColor * spec;
-                fragColor = vec4(result, 1.0);
+                fragColor = vec4(result,1.0);
             }
         """.trimIndent()
 
         program = createProgram(vShader, fShader)
 
-        // --- Upload 6 textures to GPU memory---
+        // screen-space radial shadow shader
+        val shadowVert = """
+            #version 300 es
+            layout(location = 0) in vec2 aPos;
+            out vec2 vPos;
+            void main() {
+                vPos = aPos;
+                gl_Position = vec4(aPos, 0.0, 1.0);
+            }
+        """.trimIndent()
+
+        val shadowFrag = """
+            #version 300 es
+            precision mediump float;
+            in vec2 vPos;
+            uniform vec2 uCenter;
+            uniform vec2 uScale;
+            uniform float uAlpha;
+            out vec4 fragColor;
+            void main(){
+                vec2 rel = (vPos - uCenter) / uScale;
+                float r = length(rel);
+                float fade = smoothstep(0.2, 1.1, r);
+                fragColor = vec4(0.0,0.0,0.0,(1.0-fade)*uAlpha);
+            }
+        """.trimIndent()
+        shadowProgram = createProgram(shadowVert, shadowFrag)
+
+        val quad = floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f)
+        shadowVertexBuf = ByteBuffer.allocateDirect(quad.size * 4)
+            .order(ByteOrder.nativeOrder()).asFloatBuffer()
+            .apply { put(quad); position(0) }
+
+        // Upload 6 textures to GPU memory
         GLES30.glGenTextures(6, textures, 0)
         for (i in 0 until 6) {
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, textures[i])
@@ -177,8 +203,71 @@ internal class Cuboid(
             GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, bitmaps[i], 0)
             if (!bitmaps[i].isRecycled) bitmaps[i].recycle()
         }
-
         onUploaded?.invoke()
+    }
+
+    /**
+     * Draw soft projected oval shadow behind cube
+     */
+    fun drawProjectedShadow(vp: FloatArray, rotX: Float, rotY: Float, shadowOpacity: Float) {
+        val model = FloatArray(16)
+        Matrix.setIdentityM(model, 0)
+        Matrix.rotateM(model, 0, rotX, 1f, 0f, 0f)
+        Matrix.rotateM(model, 0, rotY, 0f, 1f, 0f)
+        val mvp = FloatArray(16)
+        Matrix.multiplyMM(mvp, 0, vp, 0, model, 0)
+
+        // Project 8 corners
+        val corners = arrayOf(
+            floatArrayOf(-halfW, -halfH, -halfD, 1f),
+            floatArrayOf(halfW, -halfH, -halfD, 1f),
+            floatArrayOf(-halfW, halfH, -halfD, 1f),
+            floatArrayOf(halfW, halfH, -halfD, 1f),
+            floatArrayOf(-halfW, -halfH, halfD, 1f),
+            floatArrayOf(halfW, -halfH, halfD, 1f),
+            floatArrayOf(-halfW, halfH, halfD, 1f),
+            floatArrayOf(halfW, halfH, halfD, 1f)
+        )
+
+        var minX = 1f;
+        var maxX = -1f
+        var minY = 1f;
+        var maxY = -1f
+        val tmp = FloatArray(4)
+        for (v in corners) {
+            Matrix.multiplyMV(tmp, 0, mvp, 0, v, 0)
+            val ndcX = tmp[0] / tmp[3]
+            val ndcY = tmp[1] / tmp[3]
+            minX = minOf(minX, ndcX)
+            maxX = maxOf(maxX, ndcX)
+            minY = minOf(minY, ndcY)
+            maxY = maxOf(maxY, ndcY)
+        }
+
+        val cx = (minX + maxX) * 0.5f
+        val cy = (minY + maxY) * 0.5f// - 0.1f
+        val sx = (maxX - minX) * 1.0f//0.55f
+        val sy = (maxY - minY) * 1.0f//0.55f
+
+        GLES30.glUseProgram(shadowProgram)
+        GLES30.glDisable(GLES30.GL_DEPTH_TEST)
+        GLES30.glEnable(GLES30.GL_BLEND)
+        GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+
+        GLES30.glUniform2f(GLES30.glGetUniformLocation(shadowProgram, "uCenter"), cx, cy)
+        GLES30.glUniform2f(GLES30.glGetUniformLocation(shadowProgram, "uScale"), sx, sy)
+        GLES30.glUniform1f(
+            GLES30.glGetUniformLocation(shadowProgram, "uAlpha"),
+            shadowOpacity.coerceIn(0f, 1f),
+        )
+
+        GLES30.glEnableVertexAttribArray(0)
+        GLES30.glVertexAttribPointer(0, 2, GLES30.GL_FLOAT, false, 0, shadowVertexBuf)
+        GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
+        GLES30.glDisableVertexAttribArray(0)
+
+        GLES30.glDisable(GLES30.GL_BLEND)
+        GLES30.glEnable(GLES30.GL_DEPTH_TEST)
     }
 
     /**
@@ -190,12 +279,9 @@ internal class Cuboid(
      */
     fun draw(vp: FloatArray, rotX: Float, rotY: Float, gloss: Float) {
         GLES30.glUseProgram(program)
-
-        // Attribute locations (bound by layout qualifiers)
         GLES30.glEnableVertexAttribArray(0)
         GLES30.glEnableVertexAttribArray(1)
         GLES30.glEnableVertexAttribArray(2)
-
         GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, 0, vertexBuffer)
         GLES30.glVertexAttribPointer(1, 2, GLES30.GL_FLOAT, false, 0, texBuffer)
         GLES30.glVertexAttribPointer(2, 3, GLES30.GL_FLOAT, false, 0, normalBuffer)
@@ -245,6 +331,7 @@ internal class Cuboid(
             GLES30.glDeleteTextures(textures.size, textures, 0)
         }
         GLES30.glDeleteProgram(program)
+        GLES30.glDeleteProgram(shadowProgram)
     }
 
     private fun createProgram(vs: String, fs: String): Int {
@@ -282,11 +369,17 @@ internal class Cuboid(
         ByteBuffer.allocateDirect(size * 4)
             .order(ByteOrder.nativeOrder())
             .asFloatBuffer()
-            .apply { put(this@toFloatBuffer); position(0) }
+            .apply {
+                put(this@toFloatBuffer)
+                position(0)
+            }
 
     private fun ShortArray.toShortBuffer(): ShortBuffer =
         ByteBuffer.allocateDirect(size * 2)
             .order(ByteOrder.nativeOrder())
             .asShortBuffer()
-            .apply { put(this@toShortBuffer); position(0) }
+            .apply {
+                put(this@toShortBuffer)
+                position(0)
+            }
 }

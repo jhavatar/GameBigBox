@@ -14,7 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
-import io.chthonic.gamebigbox.opengl3.BigBoxFromUrls
+import io.chthonic.gamebigbox.opengl3.BigBox3D
 import io.chthonic.gamebigbox.opengl3.FullBoxTextureUrls
 import io.chthonic.gamebigbox.ui.theme.GameBigBoxTheme
 
@@ -30,7 +30,7 @@ class MainActivity : ComponentActivity() {
                             name = "Android",
                         )
 
-                        BigBoxFromUrls(
+                        BigBox3D(
                             FullBoxTextureUrls(
                                 front = "https://bigboxcollection.com/images/textures/front/Doom2.webp",
                                 back = "https://bigboxcollection.com/images/textures/back/Doom2.webp",

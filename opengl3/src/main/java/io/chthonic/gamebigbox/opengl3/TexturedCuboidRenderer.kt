@@ -1,6 +1,5 @@
 package io.chthonic.gamebigbox.opengl3
 
-import android.graphics.Bitmap
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
 import android.opengl.Matrix
@@ -23,9 +22,10 @@ internal class TexturedCuboidRenderer(
 ) : GLSurfaceView.Renderer {
 
     private var cuboid: Cuboid? = null
-    var currentGlossValue: Float = GlossLevel.SEMI_GLOSS.glossValue
+    var glossLevel: GlossLevel = GlossLevel.SEMI_GLOSS
     var autoRotate: Boolean = true
     var zoomFactor: Float = DEFAULT_ZOOM_FACTOR
+    var shadowOpacity: ShadowOpacity = ShadowOpacity.STRONG
     private var lastZoomFactor: Float = REFRESH_LAST_ZOOM_FACTOR
 
     // Matrices for transformations
@@ -76,7 +76,10 @@ internal class TexturedCuboidRenderer(
             lastZoomFactor = zoomFactor
         }
 
-        cuboid?.draw(vpMatrix, angleX, angleY, currentGlossValue)
+        if (shadowOpacity != ShadowOpacity.NONE) {
+            cuboid?.drawProjectedShadow(vpMatrix, angleX, angleY, shadowOpacity.alpha)
+        }
+        cuboid?.draw(vpMatrix, angleX, angleY, glossLevel.glossValue)
     }
 
     fun handleTouchDrag(deltaX: Float, deltaY: Float) {

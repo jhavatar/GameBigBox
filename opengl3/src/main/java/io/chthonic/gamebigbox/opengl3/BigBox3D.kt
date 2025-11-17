@@ -30,10 +30,11 @@ import timber.log.Timber
  * on a 3D cuboid representing a PC game's big box -- rendered with OpenGL ES 3.0.
  */
 @Composable
-fun BigBoxFromUrls(
+fun BigBox3D(
     textureUrls: BoxTextureUrls,
     modifier: Modifier = Modifier,
     glossLevel: GlossLevel = GlossLevel.SEMI_GLOSS,
+    shadowOpacity: ShadowOpacity = ShadowOpacity.STRONG,
     autoRotate: Boolean = true,
 ) {
     val context = LocalContext.current
@@ -147,8 +148,9 @@ fun BigBoxFromUrls(
             },
             update = { glView ->
                 glView.queueEvent {
-                    renderer.currentGlossValue = glossLevel.glossValue
+                    renderer.glossLevel = glossLevel
                     renderer.autoRotate = autoRotate
+                    renderer.shadowOpacity = shadowOpacity
                 }
             },
             modifier = modifier,
