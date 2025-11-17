@@ -26,10 +26,6 @@ class MainActivity : ComponentActivity() {
             GameBigBoxTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     Box(modifier = Modifier.padding(innerPadding).background(Color.Green)) {
-                        Greeting(
-                            name = "Android",
-                        )
-
                         BigBox3D(
                             FullBoxTextureUrls(
                                 front = "https://bigboxcollection.com/images/textures/front/Doom2.webp",
@@ -55,18 +51,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier,
-    )
-}
-
 @Preview(showBackground = true)
 @Composable
-fun GreetingPreview() {
+fun Preview() {
     GameBigBoxTheme {
-        Greeting("Android")
     }
 }
