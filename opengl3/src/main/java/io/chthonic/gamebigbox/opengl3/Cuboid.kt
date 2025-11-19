@@ -63,13 +63,13 @@ internal class Cuboid(
             // Front
             0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f,
             // Back
-            1f, 0f, 0f, 0f, 1f, 1f, 0f, 1f,
+            0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f,
             // Left
             0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f,
             // Right
             0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f,
             // Top
-            0f, 1f, 1f, 1f, 0f, 0f, 1f, 0f,
+            0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f,
             // Bottom
             0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f
         )
