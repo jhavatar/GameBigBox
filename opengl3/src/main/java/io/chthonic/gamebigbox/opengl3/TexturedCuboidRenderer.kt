@@ -25,8 +25,12 @@ internal class TexturedCuboidRenderer(
     var glossLevel: GlossLevel = GlossLevel.SEMI_GLOSS
     var autoRotate: Boolean = true
     var zoomFactor: Float = DEFAULT_ZOOM_FACTOR
-    var shadowOpacity: ShadowOpacity = ShadowOpacity.STRONG
     private var lastZoomFactor: Float = REFRESH_LAST_ZOOM_FACTOR
+    var shadowOpacity: ShadowOpacity = ShadowOpacity.STRONG
+    var shadowFade: ShadowFade = ShadowFade.REALISTIC
+    var shadowXOffsetRatio: Float = 0f
+    var shadowYOffsetRatio: Float = 0f
+
 
     // Matrices for transformations
     private val viewMatrix = FloatArray(16)
@@ -77,9 +81,23 @@ internal class TexturedCuboidRenderer(
         }
 
         if (shadowOpacity != ShadowOpacity.NONE) {
-            cuboid?.drawProjectedShadow(vpMatrix, angleX, angleY, shadowOpacity.alpha)
+            cuboid?.drawProjectedShadow(
+                vp = vpMatrix,
+                rotX = angleX,
+                rotY = angleY,
+                shadowOpacity = shadowOpacity.alpha,
+                shadowFadeStartRatio = shadowFade.startRatio,
+                shadowFadeEndRatio = shadowFade.endRatio,
+                xOffsetRatio = shadowXOffsetRatio,
+                yOffsetRatio = shadowYOffsetRatio,
+            )
         }
-        cuboid?.draw(vpMatrix, angleX, angleY, glossLevel.glossValue)
+        cuboid?.draw(
+            vp = vpMatrix,
+            rotX = angleX,
+            rotY = angleY,
+            gloss = glossLevel.glossValue,
+        )
     }
 
     fun handleTouchDrag(deltaX: Float, deltaY: Float) {

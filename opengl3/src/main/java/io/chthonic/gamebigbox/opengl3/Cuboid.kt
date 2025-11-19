@@ -171,11 +171,12 @@ internal class Cuboid(
             uniform vec2 uCenter;
             uniform vec2 uScale;
             uniform float uAlpha;
+            uniform vec2 uSmoothStep;
             out vec4 fragColor;
             void main(){
                 vec2 rel = (vPos - uCenter) / uScale;
                 float r = length(rel);
-                float fade = smoothstep(0.2, 1.1, r);
+                float fade = smoothstep(uSmoothStep[0], uSmoothStep[1], r);
                 fragColor = vec4(0.0,0.0,0.0,(1.0-fade)*uAlpha);
             }
         """.trimIndent()
@@ -209,7 +210,16 @@ internal class Cuboid(
     /**
      * Draw soft projected oval shadow behind cube
      */
-    fun drawProjectedShadow(vp: FloatArray, rotX: Float, rotY: Float, shadowOpacity: Float) {
+    fun drawProjectedShadow(
+        vp: FloatArray,
+        rotX: Float,
+        rotY: Float,
+        shadowOpacity: Float,
+        shadowFadeStartRatio: Float,
+        shadowFadeEndRatio: Float,
+        xOffsetRatio: Float,
+        yOffsetRatio: Float,
+    ) {
         val model = FloatArray(16)
         Matrix.setIdentityM(model, 0)
         Matrix.rotateM(model, 0, rotX, 1f, 0f, 0f)
@@ -244,10 +254,10 @@ internal class Cuboid(
             maxY = maxOf(maxY, ndcY)
         }
 
-        val cx = (minX + maxX) * 0.5f
-        val cy = (minY + maxY) * 0.5f// - 0.1f
-        val sx = (maxX - minX) * 1.0f//0.55f
-        val sy = (maxY - minY) * 1.0f//0.55f
+        val cx = (minX + maxX) * 0.5f + xOffsetRatio
+        val cy = (minY + maxY) * 0.5f + yOffsetRatio
+        val sx = (maxX - minX) * 1.0f
+        val sy = (maxY - minY) * 1.0f
 
         GLES30.glUseProgram(shadowProgram)
         GLES30.glDisable(GLES30.GL_DEPTH_TEST)
@@ -259,6 +269,11 @@ internal class Cuboid(
         GLES30.glUniform1f(
             GLES30.glGetUniformLocation(shadowProgram, "uAlpha"),
             shadowOpacity.coerceIn(0f, 1f),
+        )
+        GLES30.glUniform2f(
+            GLES30.glGetUniformLocation(shadowProgram, "uSmoothStep"),
+            shadowFadeStartRatio,
+            shadowFadeEndRatio,
         )
 
         GLES30.glEnableVertexAttribArray(0)

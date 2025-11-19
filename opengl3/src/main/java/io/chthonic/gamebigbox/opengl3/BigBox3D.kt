@@ -1,9 +1,11 @@
 package io.chthonic.gamebigbox.opengl3
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.opengl.GLSurfaceView
+import android.util.Log
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import androidx.compose.foundation.layout.Box
@@ -23,33 +25,43 @@ import coil.ImageLoader
 import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import timber.log.Timber
 
 /**
- * Compose wrapper that loads 6 textures from URLs and displays them
+ * Compose wrapper that loads textures from URLs and displays them
  * on a 3D cuboid representing a PC game's big box -- rendered with OpenGL ES 3.0.
+ * @param textureUrls textures of box sides
+ * @param autoRotate auto rotate box if true
+ * @param glossLevel glossiness of the box
+ * @param shadowOpacity opacity of the shadow the box casts
+ * @param shadowFade how the shadow fades
+ * @param shadowXOffsetRatio x offset of shadow relative to box width. positive value is to the right. default is 0f at center of box.
+ * @param shadowYOffsetRatio y offset of shadow relative to box height. positive value is up. default is 0f at center of box.
  */
+@SuppressLint("ClickableViewAccessibility")
 @Composable
 fun BigBox3D(
     textureUrls: BoxTextureUrls,
     modifier: Modifier = Modifier,
+    autoRotate: Boolean = true,
     glossLevel: GlossLevel = GlossLevel.SEMI_GLOSS,
     shadowOpacity: ShadowOpacity = ShadowOpacity.STRONG,
-    autoRotate: Boolean = true,
+    shadowFade: ShadowFade = ShadowFade.REALISTIC,
+    shadowXOffsetRatio: Float = 0f,
+    shadowYOffsetRatio: Float = 0f,
 ) {
     val context = LocalContext.current
     var textureBitmaps by remember { mutableStateOf<BoxTextureBitmaps?>(null) }
     var texturesUploaded by remember { mutableStateOf(false) }
 
-    // Load all six bitmaps asynchronously (IO thread)
+    // Load all bitmaps asynchronously (IO thread)
     LaunchedEffect(textureUrls) {
         try {
             textureBitmaps = withContext(Dispatchers.IO) {
                 textureUrls.toBitmap { url -> loadBitmapFromUrl(context, url) }
             }
-            Timber.d("Loaded bitmaps $textureBitmaps from URLs")
+            Log.d("BigBox3D", "Loaded bitmaps $textureBitmaps from URLs")
         } catch (e: BitmapLoadingFailedException) {
-            Timber.e(e, "Loading bitmaps failed")
+            Log.e("BigBox3D", "Loading bitmaps failed", e)
             textureBitmaps = null
         }
     }
@@ -130,7 +142,7 @@ fun BigBox3D(
                                         previousX = event.x
                                         previousY = event.y
                                         queueEvent {
-                                            renderer?.handleTouchDrag(dx, dy)
+                                            renderer.handleTouchDrag(dx, dy)
                                         }
                                     }
                                 }
@@ -151,6 +163,9 @@ fun BigBox3D(
                     renderer.glossLevel = glossLevel
                     renderer.autoRotate = autoRotate
                     renderer.shadowOpacity = shadowOpacity
+                    renderer.shadowFade = shadowFade
+                    renderer.shadowXOffsetRatio = shadowXOffsetRatio
+                    renderer.shadowYOffsetRatio = shadowYOffsetRatio
                 }
             },
             modifier = modifier,
@@ -165,7 +180,7 @@ fun BigBox3D(
         // Cleanup heap memory (after upload, but no recomposition)
         if (texturesUploaded) {
             LaunchedEffect(Unit) {
-                Timber.d("Recycling bitmaps after texture upload")
+                Log.d("BigBox3D", "Recycling bitmaps after texture upload")
                 bitmaps.toList().forEach { if (!it.isRecycled) it.recycle() }
                 // do NOT set bitmaps = null — keeps the GL surface alive
             }
@@ -193,10 +208,10 @@ private suspend fun loadBitmapFromUrl(context: Context, url: String): Bitmap {
             .build()
         val result = loader.execute(request)
         requireNotNull((result.drawable as? BitmapDrawable)?.bitmap).also {
-            Timber.v("Loaded bitmap from $url -> $it")
+            Log.v("loadBitmapFromUrl", "Loaded bitmap from $url -> $it")
         }
     } catch (e: Exception) {
-        Timber.e(e, "Failed to load bitmap from $url")
+        Log.e("loadBitmapFromUrl", "Failed to load bitmap from $url", e)
         throw BitmapLoadingFailedException()
     }
 }
