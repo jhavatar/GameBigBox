@@ -37,7 +37,7 @@ internal class TexturedCuboidRenderer(
     private val projMatrix = FloatArray(16)
     private val vpMatrix = FloatArray(16)
 
-    private var angleX = 20f
+    private var angleX = if (bitmaps.supportsFullXAxisRotation) 20f else 0f
     private var angleY = 30f
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
@@ -47,7 +47,7 @@ internal class TexturedCuboidRenderer(
         GLES30.glCullFace(GLES30.GL_BACK)
         // by default assumed GLES30.glFrontFace(GLES30.GL_CCW)
 
-        // Upload all six textures immediately
+        // Upload all textures immediately
         cuboid = Cuboid(bitmaps.toList(), onUploaded = onTexturesUploaded)
 
         Log.d("TexturedCubeRenderer", "OpenGL ES ${GLES30.glGetString(GLES30.GL_VERSION)} ready.")
@@ -111,10 +111,15 @@ internal class TexturedCuboidRenderer(
 
     private fun rotate(deltaX: Float, deltaY: Float) {
         // Simple rotation sensitivity tuning
-        angleY += deltaX * ROTATION_SENSITIVITY
         angleX += deltaY * ROTATION_SENSITIVITY
+        angleY += deltaX * ROTATION_SENSITIVITY
 
-        // clamp angles if desired
-        angleX = angleX.coerceIn(-90f, 90f)
+
+        // clamp angles
+        angleX = if (bitmaps.supportsFullXAxisRotation) {
+            angleX.coerceIn(-90f, 90f)
+        } else {
+            angleX.coerceIn(-7f, 7f)
+        }
     }
 }

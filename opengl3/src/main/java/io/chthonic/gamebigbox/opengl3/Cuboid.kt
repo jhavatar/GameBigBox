@@ -9,6 +9,8 @@ import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import java.nio.ShortBuffer
 
+private const val CUBOID_TEXTURE_COUNT = 6
+
 /**
  * OpenGL ES 3.0 cuboid renderer — six independent textures (front/back/left/right/top/bottom).
  * @param halfW half of the dimension of the width. for a cube it is 1f
@@ -188,8 +190,9 @@ internal class Cuboid(
             .apply { put(quad); position(0) }
 
         // Upload 6 textures to GPU memory
-        GLES30.glGenTextures(6, textures, 0)
-        for (i in 0 until 6) {
+        val requiredBitmaps = bitmaps.padToSize(CUBOID_TEXTURE_COUNT)
+        GLES30.glGenTextures(CUBOID_TEXTURE_COUNT, textures, 0)
+        for (i in 0 until CUBOID_TEXTURE_COUNT) {
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, textures[i])
             GLES30.glTexParameteri(
                 GLES30.GL_TEXTURE_2D,
@@ -201,8 +204,11 @@ internal class Cuboid(
                 GLES30.GL_TEXTURE_MAG_FILTER,
                 GLES30.GL_LINEAR
             )
-            GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, bitmaps[i], 0)
-            if (!bitmaps[i].isRecycled) bitmaps[i].recycle()
+            GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, requiredBitmaps[i], 0)
+        }
+        // recycle after uploaded incase bitmap is reused
+        requiredBitmaps.forEach { bitmap ->
+            if (!bitmap.isRecycled) bitmap.recycle()
         }
         onUploaded?.invoke()
     }
@@ -397,4 +403,16 @@ internal class Cuboid(
                 put(this@toShortBuffer)
                 position(0)
             }
+}
+
+
+private fun List<Bitmap>.padToSize(targetSize: Int): List<Bitmap> {
+    return if (size >= targetSize) {
+        this
+    } else {
+        val blackBitmap = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(0xFF000000.toInt()) // solid black pixel
+        }
+        this + List(targetSize - size) { blackBitmap }
+    }
 }
