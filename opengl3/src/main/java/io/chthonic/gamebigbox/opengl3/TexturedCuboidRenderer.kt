@@ -8,7 +8,7 @@ import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
 private const val ROTATION_SENSITIVITY = 0.4f
-private const val DEFAULT_ZOOM = 8f
+private const val DEFAULT_ZOOM = 5f
 private const val DEFAULT_ZOOM_FACTOR = 1f // 1x = normal
 private const val REFRESH_LAST_ZOOM_FACTOR = -1f // force refresh on first frame
 

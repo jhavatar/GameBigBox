@@ -1,20 +1,23 @@
 package io.chthonic.gamebigbox
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -27,6 +30,7 @@ import androidx.compose.material3.rememberStandardBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -37,6 +41,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.chthonic.gamebigbox.opengl3.BigBox3D
+import io.chthonic.gamebigbox.opengl3.EquatorialBoxTextureUrls
 import io.chthonic.gamebigbox.opengl3.FullBoxTextureUrls
 import io.chthonic.gamebigbox.opengl3.GlossLevel
 import io.chthonic.gamebigbox.opengl3.ShadowFade
@@ -105,43 +110,80 @@ fun MainScreen() {
             )
         }
     ) { innerPadding ->
-        Column(
+        val boxes = remember {
+            listOf(
+                FullBoxTextureUrls(
+                    front = "https://bigboxcollection.com/images/textures/front/Doom2.webp",
+                    back = "https://bigboxcollection.com/images/textures/back/Doom2.webp",
+                    top = "https://bigboxcollection.com/images/textures/top/Doom2.webp",
+                    bottom = "https://bigboxcollection.com/images/textures/bottom/Doom2.webp",
+                    left = "https://bigboxcollection.com/images/textures/left/Doom2.webp",
+                    right = "https://bigboxcollection.com/images/textures/right/Doom2.webp",
+                ),
+                EquatorialBoxTextureUrls(
+                    front = "https://bigboxcollection.com/images/textures/front/StarControl.webp",
+                    back = "https://bigboxcollection.com/images/textures/back/StarControl.webp",
+                    left = "https://bigboxcollection.com/images/textures/left/StarControl.webp",
+                    right = "https://bigboxcollection.com/images/textures/right/StarControl.webp",
+                ),
+                FullBoxTextureUrls(
+                    front = "https://bigboxcollection.com/images/textures/front/StarTrekTNGFinalUnityCE.webp",
+                    back = "https://bigboxcollection.com/images/textures/back/StarTrekTNGFinalUnityCE.webp",
+                    top = "https://bigboxcollection.com/images/textures/top/StarTrekTNGFinalUnityCE.webp",
+                    bottom = "https://bigboxcollection.com/images/textures/bottom/StarTrekTNGFinalUnityCE.webp",
+                    left = "https://bigboxcollection.com/images/textures/left/StarTrekTNGFinalUnityCE.webp",
+                    right = "https://bigboxcollection.com/images/textures/right/StarTrekTNGFinalUnityCE.webp",
+                ),
+                FullBoxTextureUrls(
+                    front = "https://bigboxcollection.com/images/textures/front/SimCity2000DE.webp",
+                    back = "https://bigboxcollection.com/images/textures/back/SimCity2000DE.webp",
+                    top = "https://bigboxcollection.com/images/textures/top/SimCity2000DE.webp",
+                    bottom = "https://bigboxcollection.com/images/textures/bottom/SimCity2000DE.webp",
+                    left = "https://bigboxcollection.com/images/textures/left/SimCity2000DE.webp",
+                    right = "https://bigboxcollection.com/images/textures/right/SimCity2000DE.webp",
+                ),
+                FullBoxTextureUrls(
+                    front = "https://bigboxcollection.com/images/textures/front/Ultima9DragonEditionPacificAsia.webp",
+                    back = "https://bigboxcollection.com/images/textures/back/Ultima9DragonEditionPacificAsia.webp",
+                    top = "https://bigboxcollection.com/images/textures/top/Ultima9DragonEditionPacificAsia.webp",
+                    bottom = "https://bigboxcollection.com/images/textures/bottom/Ultima9DragonEditionPacificAsia.webp",
+                    left = "https://bigboxcollection.com/images/textures/left/Ultima9DragonEditionPacificAsia.webp",
+                    right = "https://bigboxcollection.com/images/textures/right/Ultima9DragonEditionPacificAsia.webp",
+                ),
+            )
+        }
+        val gestureStates = remember { mutableStateListOf(false, false, false, false, false) }
+        val scrollingEnabled = !gestureStates.any { it }
+        Log.v("D3V", "scrollingEnabled = $scrollingEnabled")
+        LazyColumn(
             Modifier
-                .systemBarsPadding()
+                .statusBarsPadding()
                 .padding(top = innerPadding.calculateTopPadding())
-                .fillMaxSize()
+                .background(Color.Green)
+                .fillMaxSize(),
+            userScrollEnabled = scrollingEnabled,
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Green),
-                contentAlignment = Alignment.Center,
-            ) {
+            items(count = boxes.size) { idx ->
+                val textureUrls = boxes[idx]
                 BigBox3D(
-                    FullBoxTextureUrls(
-                        front = "https://bigboxcollection.com/images/textures/front/Doom2.webp",
-                        back = "https://bigboxcollection.com/images/textures/back/Doom2.webp",
-                        top = "https://bigboxcollection.com/images/textures/top/Doom2.webp",
-                        bottom = "https://bigboxcollection.com/images/textures/bottom/Doom2.webp",
-                        left = "https://bigboxcollection.com/images/textures/left/Doom2.webp",
-                        right = "https://bigboxcollection.com/images/textures/right/Doom2.webp",
-                    ),
-//                            FullBoxTextureUrls(
-//                                front = "https://rickandmortyapi.com/api/character/avatar/1.jpeg",
-//                                back = "https://rickandmortyapi.com/api/character/avatar/2.jpeg",
-//                                top = "https://rickandmortyapi.com/api/character/avatar/3.jpeg",
-//                                bottom = "https://rickandmortyapi.com/api/character/avatar/4.jpeg",
-//                                left = "https://rickandmortyapi.com/api/character/avatar/5.jpeg",
-//                                right = "https://rickandmortyapi.com/api/character/avatar/6.jpeg"
-//                            )
+                    modifier = Modifier
+                        .height(400.dp)
+                        .border(1.dp, Color.Black)
+                        .fillMaxWidth(),
+                    onGestureActive = {
+                        gestureStates[idx] = it
+                    },
+                    textureUrls = textureUrls,
                     autoRotate = autoRotate,
                     glossLevel = glossLevel,
                     shadowOpacity = shadowOpacity,
                     shadowFade = shadowFade,
                     shadowXOffsetRatio = shadowX,
                     shadowYOffsetRatio = shadowY,
-                    modifier = Modifier,
                 )
+            }
+            item {
+                Spacer(Modifier.height(300.dp))
             }
         }
     }

@@ -9,7 +9,6 @@ import android.util.Log
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -18,6 +17,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
@@ -36,7 +36,9 @@ import kotlinx.coroutines.withContext
  * @param shadowFade how the shadow fades
  * @param shadowXOffsetRatio x offset of shadow relative to box width. positive value is to the right. default is 0f at center of box.
  * @param shadowYOffsetRatio y offset of shadow relative to box height. positive value is up. default is 0f at center of box.
+ * @param onGestureActive callback with parameter that indicates if a touch gesture is active. Fires (at least) when gesture state changes.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @SuppressLint("ClickableViewAccessibility")
 @Composable
 fun BigBox3D(
@@ -48,6 +50,7 @@ fun BigBox3D(
     shadowFade: ShadowFade = ShadowFade.REALISTIC,
     shadowXOffsetRatio: Float = 0f,
     shadowYOffsetRatio: Float = 0f,
+    onGestureActive: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     var textureBitmaps by remember { mutableStateOf<BoxTextureBitmaps?>(null) }
@@ -97,14 +100,26 @@ fun BigBox3D(
                     // 👆 Touch-based cube rotation
                     var previousX = 0f
                     var previousY = 0f
-
+                    var expectRotating = false
+                    var isRotating = false
                     var isScaling = false
                     var scaleFactor = 1f
+                    val gestureActive: () -> Boolean = {
+                        isScaling || isRotating
+                    }
+                    val notifyParentOfGestureState = {
+                        onGestureActive(gestureActive())
+                    }
+                    val updateDisallowInterceptTouchEvent = {
+                        this@apply.parent.requestDisallowInterceptTouchEvent(gestureActive())
+                    }
                     val scaleDetector = ScaleGestureDetector(
                         context,
                         object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
                             override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
                                 isScaling = true
+                                updateDisallowInterceptTouchEvent()
+                                notifyParentOfGestureState()
                                 return true
                             }
 
@@ -119,24 +134,26 @@ fun BigBox3D(
 
                             override fun onScaleEnd(detector: ScaleGestureDetector) {
                                 isScaling = false
+                                updateDisallowInterceptTouchEvent()
+                                notifyParentOfGestureState()
                             }
                         }
                     )
 
-                    var isMoving = false
-                    setOnTouchListener { _, event ->
+                    setOnTouchListener { v, event ->
                         scaleDetector.onTouchEvent(event)
 
                         if (!isScaling) {
-                            when (event.action) {
+                            when (event.actionMasked) {
                                 MotionEvent.ACTION_DOWN -> {
-                                    isMoving = true
+                                    expectRotating = true
                                     previousX = event.x
                                     previousY = event.y
                                 }
 
                                 MotionEvent.ACTION_MOVE -> {
-                                    if (isMoving) {
+                                    if (expectRotating) {
+                                        isRotating = true
                                         val dx = event.x - previousX
                                         val dy = event.y - previousY
                                         previousX = event.x
@@ -144,15 +161,23 @@ fun BigBox3D(
                                         queueEvent {
                                             renderer.handleTouchDrag(dx, dy)
                                         }
+                                        updateDisallowInterceptTouchEvent()
+                                        notifyParentOfGestureState()
                                     }
                                 }
 
                                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                                    isMoving = false
+                                    isRotating = false
+                                    expectRotating = false
+                                    updateDisallowInterceptTouchEvent()
+                                    notifyParentOfGestureState()
                                 }
                             }
                         } else {
-                            isMoving = false
+                            isRotating = false
+                            expectRotating = false
+                            updateDisallowInterceptTouchEvent()
+                            notifyParentOfGestureState()
                         }
                         true
                     }
@@ -188,7 +213,7 @@ fun BigBox3D(
     } ?: run {
         // 🔹 Loading indicator while images download
         Box(
-            Modifier.fillMaxSize(),
+            modifier = modifier,
             contentAlignment = Alignment.Center
         ) {
             CircularProgressIndicator()
