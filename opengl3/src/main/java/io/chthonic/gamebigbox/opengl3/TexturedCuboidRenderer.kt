@@ -48,7 +48,13 @@ internal class TexturedCuboidRenderer(
         // by default assumed GLES30.glFrontFace(GLES30.GL_CCW)
 
         // Upload all textures immediately
-        cuboid = Cuboid(bitmaps.toList(), onUploaded = onTexturesUploaded)
+        cuboid = Cuboid(
+            bitmaps.toList(),
+            halfW = bitmaps.halfWidth,
+            halfH = bitmaps.halfHeight,
+            halfD = bitmaps.halfDepth,
+            onUploaded = onTexturesUploaded,
+        )
 
         Log.d("TexturedCubeRenderer", "OpenGL ES ${GLES30.glGetString(GLES30.GL_VERSION)} ready.")
     }
@@ -113,7 +119,6 @@ internal class TexturedCuboidRenderer(
         // Simple rotation sensitivity tuning
         angleX += deltaY * ROTATION_SENSITIVITY
         angleY += deltaX * ROTATION_SENSITIVITY
-
 
         // clamp angles
         angleX = if (bitmaps.supportsFullXAxisRotation) {
