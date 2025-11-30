@@ -214,7 +214,7 @@ fun BigBox3D(
         // 🔹 Loading indicator while images download
         Box(
             modifier = modifier,
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             CircularProgressIndicator()
         }
