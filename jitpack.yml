@@ -1,0 +1,12 @@
+jdk:
+  - openjdk17
+
+before_install:
+  # Make sure we're inside the library directory
+  - cd opengl3
+
+install:
+  # Export the latest tag version and build the library
+  - export VERSION=$(git describe --tags --abbrev=0)
+  # Build only the opengl3 library module
+  - ./gradlew :opengl3:assembleRelease :opengl3:publishToMavenLocal
