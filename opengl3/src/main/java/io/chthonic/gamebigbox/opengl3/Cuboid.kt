@@ -4,33 +4,45 @@ import android.graphics.Bitmap
 import android.opengl.GLES30
 import android.opengl.GLUtils
 import android.opengl.Matrix
+import io.chthonic.gamebigbox.opengl3.RegionFace.BACK
+import io.chthonic.gamebigbox.opengl3.RegionFace.BOTTOM
+import io.chthonic.gamebigbox.opengl3.RegionFace.FRONT
+import io.chthonic.gamebigbox.opengl3.RegionFace.LEFT
+import io.chthonic.gamebigbox.opengl3.RegionFace.RIGHT
+import io.chthonic.gamebigbox.opengl3.RegionFace.TOP
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import java.nio.ShortBuffer
 
-private const val CUBOID_TEXTURE_COUNT = 6
-
 /**
  * OpenGL ES 3.0 cuboid renderer — six independent textures (front/back/left/right/top/bottom).
+ * @param atlasBitmap 2x3 atlas bitmap that include all the sides of the cuboid,
+ *  ┌───────────────┬───────────────┬───────────────┐
+ *  │ Front         │ Back          │ Left          │
+ *  ├───────────────┼───────────────┼───────────────┤
+ *  │ Right         │ Top           │ Bottom        │
+ *  └───────────────┴───────────────┴───────────────┘
+ * @param atlasRegions metadata on per-face UV bounds
  * @param halfW half of the dimension of the width. for a cube it is 1f
  * @param halfH half of the dimension of the height. for a cube it is 1f
  * @param halfD half of the dimension of the depth. for a cube it is 1f
- * @param onUploaded callback after textures uploaded to GPU memory
+ * @param onTexturesUploaded callback after texture uploaded to GPU memory
  */
 internal class Cuboid(
-    bitmaps: List<Bitmap>,
+    atlasBitmap: Bitmap,
+    atlasRegions: Map<RegionFace, AtlasRegion>,
     val halfW: Float = 0.778f,
     val halfH: Float = 1.0f,
     val halfD: Float = 0.222f,
-    onUploaded: (() -> Unit)? = null,
+    onTexturesUploaded: (() -> Unit)? = null,
 ) {
 
     private val vertexBuffer: FloatBuffer
     private val texBuffer: FloatBuffer
     private val normalBuffer: FloatBuffer
     private val indexBuffer: ShortBuffer
-    private val textures = IntArray(6)
+    private val textures = IntArray(1)
     private val program: Int
 
     // 2D shadow
@@ -60,21 +72,17 @@ internal class Cuboid(
             -halfW, -halfH, -halfD, halfW, -halfH, -halfD,
         )
 
-        // 24 UVs (4 per face)
-        val texCoords = floatArrayOf(
-            // Front
-            0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f,
-            // Back
-            0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f,
-            // Left
-            0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f,
-            // Right
-            0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f,
-            // Top
-            0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f,
-            // Bottom
-            0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f
-        )
+        val texCoords = FloatArray(4 * 2 * 6) // 4 vertices * 2 UVs * 6 faces
+        val faceOrder = listOf(FRONT, BACK, LEFT, RIGHT, TOP, BOTTOM)
+        faceOrder.forEachIndexed { faceIndex, faceName ->
+            val r = atlasRegions[faceName] ?: AtlasRegion(0f, 0f, 1f, 1f)
+            val base = faceIndex * 8
+            // Each face’s UVs: top-left, top-right, bottom-left, bottom-right
+            texCoords[base + 0] = r.u0; texCoords[base + 1] = r.v0
+            texCoords[base + 2] = r.u1; texCoords[base + 3] = r.v0
+            texCoords[base + 4] = r.u0; texCoords[base + 5] = r.v1
+            texCoords[base + 6] = r.u1; texCoords[base + 7] = r.v1
+        }
 
         // 24 normals (one per vertex)
         val normals = floatArrayOf(
@@ -189,28 +197,12 @@ internal class Cuboid(
             .order(ByteOrder.nativeOrder()).asFloatBuffer()
             .apply { put(quad); position(0) }
 
-        // Upload 6 textures to GPU memory
-        val requiredBitmaps = bitmaps.padToSize(CUBOID_TEXTURE_COUNT)
-        GLES30.glGenTextures(CUBOID_TEXTURE_COUNT, textures, 0)
-        for (i in 0 until CUBOID_TEXTURE_COUNT) {
-            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, textures[i])
-            GLES30.glTexParameteri(
-                GLES30.GL_TEXTURE_2D,
-                GLES30.GL_TEXTURE_MIN_FILTER,
-                GLES30.GL_LINEAR
-            )
-            GLES30.glTexParameteri(
-                GLES30.GL_TEXTURE_2D,
-                GLES30.GL_TEXTURE_MAG_FILTER,
-                GLES30.GL_LINEAR
-            )
-            GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, requiredBitmaps[i], 0)
-        }
-        // recycle after uploaded incase bitmap is reused
-        requiredBitmaps.forEach { bitmap ->
-            if (!bitmap.isRecycled) bitmap.recycle()
-        }
-        onUploaded?.invoke()
+        GLES30.glGenTextures(1, textures, 0)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, textures[0])
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
+        GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+        GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, atlasBitmap, 0)
+        onTexturesUploaded?.invoke()
     }
 
     /**
@@ -300,6 +292,8 @@ internal class Cuboid(
      */
     fun draw(vp: FloatArray, rotX: Float, rotY: Float, gloss: Float) {
         GLES30.glUseProgram(program)
+
+        // Enable vertex attributes
         GLES30.glEnableVertexAttribArray(0)
         GLES30.glEnableVertexAttribArray(1)
         GLES30.glEnableVertexAttribArray(2)
@@ -307,6 +301,7 @@ internal class Cuboid(
         GLES30.glVertexAttribPointer(1, 2, GLES30.GL_FLOAT, false, 0, texBuffer)
         GLES30.glVertexAttribPointer(2, 3, GLES30.GL_FLOAT, false, 0, normalBuffer)
 
+        // Uniform locations
         val uMVP = GLES30.glGetUniformLocation(program, "uMVP")
         val uModel = GLES30.glGetUniformLocation(program, "uModel")
         val uLightPos = GLES30.glGetUniformLocation(program, "uLightPos")
@@ -314,6 +309,7 @@ internal class Cuboid(
         val uLightColor = GLES30.glGetUniformLocation(program, "uLightColor")
         val uMaterialGloss = GLES30.glGetUniformLocation(program, "uMaterialGloss")
 
+        // MVP setup
         val model = FloatArray(16)
         val mvp = FloatArray(16)
         Matrix.setIdentityM(model, 0)
@@ -324,18 +320,17 @@ internal class Cuboid(
         GLES30.glUniformMatrix4fv(uMVP, 1, false, mvp, 0)
         GLES30.glUniformMatrix4fv(uModel, 1, false, model, 0)
 
-        // Simple static light and camera
+        // Light setup
         GLES30.glUniform3f(uLightPos, 3f, 3f, 5f)
         GLES30.glUniform3f(uViewPos, 0f, 0f, 4f)
         GLES30.glUniform3f(uLightColor, 1f, 1f, 1f)
         GLES30.glUniform1f(uMaterialGloss, gloss.coerceIn(0f, 1f))
 
-        // Draw each textured face
-        for (i in 0 until 6) {
-            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, textures[i])
-            indexBuffer.position(i * 6)
-            GLES30.glDrawElements(GLES30.GL_TRIANGLES, 6, GLES30.GL_UNSIGNED_SHORT, indexBuffer)
-        }
+        // ✅ Bind single atlas texture once
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, textures[0])
+
+        // ✅ Draw all faces in one go
+        GLES30.glDrawElements(GLES30.GL_TRIANGLES, 36, GLES30.GL_UNSIGNED_SHORT, indexBuffer)
 
         GLES30.glDisableVertexAttribArray(0)
         GLES30.glDisableVertexAttribArray(1)
@@ -403,16 +398,4 @@ internal class Cuboid(
                 put(this@toShortBuffer)
                 position(0)
             }
-}
-
-
-private fun List<Bitmap>.padToSize(targetSize: Int): List<Bitmap> {
-    return if (size >= targetSize) {
-        this
-    } else {
-        val blackBitmap = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).apply {
-            eraseColor(0xFF000000.toInt()) // solid black pixel
-        }
-        this + List(targetSize - size) { blackBitmap }
-    }
 }

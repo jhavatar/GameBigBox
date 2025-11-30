@@ -17,7 +17,7 @@ private const val REFRESH_LAST_ZOOM_FACTOR = -1f // force refresh on first frame
  * Handles camera setup, projection, rotation, and draw loop.
  */
 internal class TexturedCuboidRenderer(
-    private val bitmaps: BoxTextureBitmaps,
+    private val atlas: BoxTextureAtlasBitmap,
     private val onTexturesUploaded: (() -> Unit)? = null
 ) : GLSurfaceView.Renderer {
 
@@ -37,10 +37,10 @@ internal class TexturedCuboidRenderer(
     private val projMatrix = FloatArray(16)
     private val vpMatrix = FloatArray(16)
 
-    private var angleX = if (bitmaps.supportsFullXAxisRotation) 20f else 0f
+    private var angleX = if (atlas.supportsFullXAxisRotation) 20f else 0f
     private var angleY = 30f
 
-    override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
+    override fun onSurfaceCreated(gl: GL10, config: EGLConfig) {
         GLES30.glClearColor(0f, 0f, 0f, 0f)
         GLES30.glEnable(GLES30.GL_DEPTH_TEST)
         GLES30.glEnable(GLES30.GL_CULL_FACE)
@@ -49,13 +49,13 @@ internal class TexturedCuboidRenderer(
 
         // Upload all textures immediately
         cuboid = Cuboid(
-            bitmaps.toList(),
-            halfW = bitmaps.halfWidth,
-            halfH = bitmaps.halfHeight,
-            halfD = bitmaps.halfDepth,
-            onUploaded = onTexturesUploaded,
+            atlas.bitmap,
+            atlasRegions = atlas.regions,
+            halfW = atlas.halfWidth,
+            halfH = atlas.halfHeight,
+            halfD = atlas.halfDepth,
+            onTexturesUploaded = onTexturesUploaded,
         )
-
         Log.d("TexturedCubeRenderer", "OpenGL ES ${GLES30.glGetString(GLES30.GL_VERSION)} ready.")
     }
 
@@ -121,7 +121,7 @@ internal class TexturedCuboidRenderer(
         angleY += deltaX * ROTATION_SENSITIVITY
 
         // clamp angles
-        angleX = if (bitmaps.supportsFullXAxisRotation) {
+        angleX = if (atlas.supportsFullXAxisRotation) {
             angleX.coerceIn(-90f, 90f)
         } else {
             angleX.coerceIn(-7f, 7f)

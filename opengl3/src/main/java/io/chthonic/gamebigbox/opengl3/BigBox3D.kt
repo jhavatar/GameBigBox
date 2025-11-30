@@ -26,6 +26,8 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+private const val DEBUG_OVERLAY = false
+
 /**
  * Compose wrapper that loads textures from URLs and displays them
  * on a 3D cuboid representing a PC game's big box -- rendered with OpenGL ES 3.0.
@@ -53,26 +55,37 @@ fun BigBox3D(
     onGestureActive: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
-    var textureBitmaps by remember { mutableStateOf<BoxTextureBitmaps?>(null) }
+    var textureAtlas by remember { mutableStateOf<BoxTextureAtlasBitmap?>(null) }
     var texturesUploaded by remember { mutableStateOf(false) }
 
     // Load all bitmaps asynchronously (IO thread)
     LaunchedEffect(textureUrls) {
         try {
-            textureBitmaps = withContext(Dispatchers.IO) {
-                textureUrls.toBitmap { url -> loadBitmapFromUrl(context, url) }
+            textureAtlas = withContext(Dispatchers.IO) {
+                // Step 1: Download and decode bitmaps (I/O-bound)
+                val textureBitmaps = textureUrls.toBitmaps { url ->
+                    loadBitmapFromUrl(context, url)
+                }
+                Log.d("BigBox3D", "Loaded bitmaps $textureBitmaps from URLs")
+
+                // Step 2: Switch to Default dispatcher for atlas composition (CPU-bound)
+                withContext(Dispatchers.Default) {
+                    textureBitmaps.toAtlas(DEBUG_OVERLAY).also {
+                        textureBitmaps.recycle()
+                    }
+                }
             }
-            Log.d("BigBox3D", "Loaded bitmaps $textureBitmaps from URLs")
+            Log.d("BigBox3D", "created atlas textureAtlas from bitmaps")
         } catch (e: BitmapLoadingFailedException) {
-            Log.e("BigBox3D", "Loading bitmaps failed", e)
-            textureBitmaps = null
+            Log.e("BigBox3D", "creating atlas failed", e)
+            textureAtlas = null
         }
     }
 
     // Once all six bitmaps are ready, create GL surface
-    textureBitmaps?.let { bitmaps ->
+    textureAtlas?.let { atlas ->
         val renderer = remember {
-            TexturedCuboidRenderer(bitmaps) {
+            TexturedCuboidRenderer(atlas) {
                 texturesUploaded = true
             }
         }
@@ -205,8 +218,8 @@ fun BigBox3D(
         // Cleanup heap memory (after upload, but no recomposition)
         if (texturesUploaded) {
             LaunchedEffect(Unit) {
-                Log.d("BigBox3D", "Recycling bitmaps after texture upload")
-                bitmaps.toList().forEach { if (!it.isRecycled) it.recycle() }
+                Log.d("BigBox3D", "Recycling atlas after texture upload")
+                atlas.recycle()
                 // do NOT set bitmaps = null — keeps the GL surface alive
             }
         }

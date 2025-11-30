@@ -11,6 +11,7 @@ composeBom = "2024.09.00"
 appcompat = "1.7.1"
 material = "1.13.0"
 coil = "2.6.0"
+gamebigbox = "v1.0.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -33,6 +34,8 @@ material = { group = "com.google.android.material", name = "material", version.r
 # image
 coil = { module = "io.coil-kt:coil", version.ref = "coil" }
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
+
+gamebigbox = { module = "com.github.jhavatar:gamebigbox", version.ref = "gamebigbox" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

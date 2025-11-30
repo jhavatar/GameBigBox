@@ -3,7 +3,7 @@ package io.chthonic.gamebigbox.opengl3
 import android.graphics.Bitmap
 
 sealed interface BoxTextureUrls {
-    suspend fun toBitmap(urlToBitmap: suspend (String) -> Bitmap): BoxTextureBitmaps
+    suspend fun toBitmaps(urlToBitmap: suspend (String) -> Bitmap): BoxTextureBitmaps
 }
 
 data class FullBoxTextureUrls(
@@ -14,7 +14,7 @@ data class FullBoxTextureUrls(
     val left: String,
     val right: String,
 ) : BoxTextureUrls {
-    override suspend fun toBitmap(urlToBitmap: suspend (String) -> Bitmap): BoxTextureBitmaps {
+    override suspend fun toBitmaps(urlToBitmap: suspend (String) -> Bitmap): BoxTextureBitmaps {
         return FullBoxTextureBitmaps(
             front = urlToBitmap(front),
             back = urlToBitmap(back),
@@ -32,7 +32,7 @@ data class EquatorialBoxTextureUrls(
     val left: String,
     val right: String,
 ) : BoxTextureUrls {
-    override suspend fun toBitmap(urlToBitmap: suspend (String) -> Bitmap): BoxTextureBitmaps {
+    override suspend fun toBitmaps(urlToBitmap: suspend (String) -> Bitmap): BoxTextureBitmaps {
         return EquitorialTextureBitmaps(
             front = urlToBitmap(front),
             back = urlToBitmap(back),
