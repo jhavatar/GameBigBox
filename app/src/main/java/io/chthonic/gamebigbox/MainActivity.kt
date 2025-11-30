@@ -1,7 +1,6 @@
 package io.chthonic.gamebigbox
 
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
@@ -154,7 +153,6 @@ fun MainScreen() {
         }
         val gestureStates = remember { mutableStateListOf(false, false, false, false, false) }
         val scrollingEnabled = !gestureStates.any { it }
-        Log.v("D3V", "scrollingEnabled = $scrollingEnabled")
         LazyColumn(
             Modifier
                 .statusBarsPadding()
@@ -289,7 +287,7 @@ private fun SettingEnum(
     text: String,
     enumCount: Int,
     selectedIndex: Int,
-    onSelectedChange: (Int) -> Unit
+    onSelectedChange: (Int) -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         val lastIndex = enumCount - 1
@@ -316,7 +314,7 @@ private fun SettingFloat(
     maxValue: Float,
     steps: Int,
     selectedValue: Float,
-    onSelectedChange: (Float) -> Unit
+    onSelectedChange: (Float) -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Text(text = text)
