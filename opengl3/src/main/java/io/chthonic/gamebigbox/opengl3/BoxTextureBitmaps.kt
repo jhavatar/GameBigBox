@@ -12,12 +12,16 @@ import io.chthonic.gamebigbox.opengl3.RegionFace.FRONT
 import io.chthonic.gamebigbox.opengl3.RegionFace.LEFT
 import io.chthonic.gamebigbox.opengl3.RegionFace.RIGHT
 import io.chthonic.gamebigbox.opengl3.RegionFace.TOP
+import kotlin.math.min
 
 sealed interface BoxTextureBitmaps {
     fun toAtlas(debugOverlay: Boolean): BoxTextureAtlasBitmap
     fun recycle()
 }
 
+/**
+ * Bitmaps for all  sides are provided.
+ */
 data class FullBoxTextureBitmaps(
     val front: Bitmap,
     val back: Bitmap,
@@ -34,7 +38,7 @@ data class FullBoxTextureBitmaps(
             halfW = dimensions.halfWidth,
             halfH = dimensions.halfHeight,
             halfD = dimensions.halfDepth,
-            debugOverlay = debugOverlay,
+            showDebugOverlay = debugOverlay,
             normalizeUVs = true
         )
         return BoxTextureAtlasBitmap(
@@ -56,7 +60,10 @@ data class FullBoxTextureBitmaps(
     }
 }
 
-data class EquitorialTextureBitmaps(
+/**
+ * Bitmaps provided for all sides except top and bottom.
+ */
+data class EquitorialBoxTextureBitmaps(
     val front: Bitmap,
     val back: Bitmap,
     val left: Bitmap,
@@ -72,7 +79,7 @@ data class EquitorialTextureBitmaps(
             halfW = dimensions.halfWidth,
             halfH = dimensions.halfHeight,
             halfD = dimensions.halfDepth,
-            debugOverlay = debugOverlay,
+            showDebugOverlay = debugOverlay,
             normalizeUVs = true
         )
         for (i in list.size until fullList.size) {
@@ -116,8 +123,8 @@ fun List<Bitmap>.buildAtlas2x3(
     halfW: Float,
     halfH: Float,
     halfD: Float,
-    debugOverlay: Boolean = false,
-    normalizeUVs: Boolean = true
+    showDebugOverlay: Boolean = false,
+    normalizeUVs: Boolean = true,
 ): AtlasMeta {
     require(size == 6) { "Expected 6 bitmaps, got $size" }
 
@@ -162,6 +169,25 @@ fun List<Bitmap>.buildAtlas2x3(
     val canvas = Canvas(atlas)
     val regions = mutableMapOf<RegionFace, AtlasRegion>()
 
+    val debugOverlay: DebugOverlay? = if (showDebugOverlay) {
+        val minDim = targetSizes.minOf { min(it.first, it.second) }.toFloat()
+        DebugOverlay(
+            borderPaint = Paint().apply {
+                color = Color.RED
+                strokeWidth = minDim * 0.1f
+                style = Paint.Style.STROKE
+            },
+            textPaint = Paint().apply {
+                color = Color.RED
+                style = Paint.Style.FILL
+                textSize = minDim * 0.5f
+                isFakeBoldText = true
+            }
+        )
+    } else {
+        null
+    }
+
     var yOffset = 0
     for (r in 0 until rows) {
         var xOffset = 0
@@ -181,27 +207,26 @@ fun List<Bitmap>.buildAtlas2x3(
 
             regions[faces[i]] = AtlasRegion(u0, v0, u1, v1)
 
+            debugOverlay?.let {
+                canvas.drawRect(
+                    android.graphics.Rect(
+                        xOffset, yOffset, xOffset + w, yOffset + h,
+                    ),
+                    it.borderPaint,
+                )
+                val text = faces[i].debugLabel
+                val textW = it.textPaint.measureText(text)
+                canvas.drawText(
+                    text,
+                    xOffset + w / 2f - textW / 2f,
+                    yOffset + h / 2f + it.textPaint.textSize / 2f,
+                    it.textPaint,
+                )
+            }
+
             xOffset += colWidths[c]
         }
         yOffset += rowHeights[r]
-    }
-
-    if (debugOverlay) {
-        val paint = Paint().apply {
-            color = Color.RED
-            strokeWidth = 2f
-            style = Paint.Style.STROKE
-        }
-        var x = 0
-        for (cw in colWidths.dropLast(1)) {
-            x += cw
-            canvas.drawLine(x.toFloat(), 0f, x.toFloat(), atlasHeight.toFloat(), paint)
-        }
-        var y = 0
-        for (rh in rowHeights.dropLast(1)) {
-            y += rh
-            canvas.drawLine(0f, y.toFloat(), atlasWidth.toFloat(), y.toFloat(), paint)
-        }
     }
 
     return AtlasMeta(atlas, regions)
@@ -211,3 +236,8 @@ data class AtlasMeta(
     val bitmap: Bitmap,
     val regions: Map<RegionFace, AtlasRegion>
 )
+
+private val RegionFace.debugLabel: String
+    get() = name.first().toString()
+
+private data class DebugOverlay(val borderPaint: Paint, val textPaint: Paint)

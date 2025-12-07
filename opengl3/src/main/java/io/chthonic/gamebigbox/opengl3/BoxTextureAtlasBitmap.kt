@@ -25,7 +25,7 @@ enum class RegionFace {
     LEFT,
     RIGHT,
     TOP,
-    BOTTOM,
+    BOTTOM;
 }
 
 data class AtlasRegion(

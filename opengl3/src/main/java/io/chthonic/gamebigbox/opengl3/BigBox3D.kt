@@ -26,7 +26,7 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private const val DEBUG_OVERLAY = false
+private const val SHOW_DEBUG_OVERLAY = false
 
 /**
  * Compose wrapper that loads textures from URLs and displays them
@@ -70,14 +70,14 @@ fun BigBox3D(
 
                 // Step 2: Switch to Default dispatcher for atlas composition (CPU-bound)
                 withContext(Dispatchers.Default) {
-                    textureBitmaps.toAtlas(DEBUG_OVERLAY).also {
+                    textureBitmaps.toAtlas(SHOW_DEBUG_OVERLAY).also {
                         textureBitmaps.recycle()
                     }
                 }
             }
-            Log.d("BigBox3D", "created atlas textureAtlas from bitmaps")
+            Log.d("BigBox3D", "created texture atlas from bitmaps")
         } catch (e: BitmapLoadingFailedException) {
-            Log.e("BigBox3D", "creating atlas failed", e)
+            Log.e("BigBox3D", "creating texture atlas failed", e)
             textureAtlas = null
         }
     }

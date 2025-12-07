@@ -33,7 +33,7 @@ data class EquatorialBoxTextureUrls(
     val right: String,
 ) : BoxTextureUrls {
     override suspend fun toBitmaps(urlToBitmap: suspend (String) -> Bitmap): BoxTextureBitmaps {
-        return EquitorialTextureBitmaps(
+        return EquitorialBoxTextureBitmaps(
             front = urlToBitmap(front),
             back = urlToBitmap(back),
             left = urlToBitmap(left),
