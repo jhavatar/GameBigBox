@@ -11,7 +11,7 @@ composeBom = "2024.09.00"
 appcompat = "1.7.1"
 material = "1.13.0"
 coil = "2.6.0"
-gamebigbox = "v1.0.1"
+gamebigbox = "v1.1.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
