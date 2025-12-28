@@ -284,13 +284,32 @@ internal class Cuboid(
     }
 
     /**
-     * @param gloss glossiness between 0f and 1f.
+     * @param vp Combined view–projection matrix (typically from `Matrix.multiplyMM()`).
+     * @param rotX Rotation about the X-axis, in degrees.
+     * @param rotY Rotation about the Y-axis, in degrees.
+     *
+     * @param cameraZ The Z-axis position of the virtual camera in world space.
+     * This controls the apparent zoom and view distance of the object.
+     *
+     * A larger value moves the camera further away from the cube (zooming out),
+     * while a smaller value moves it closer (zooming in).
+     *
+     * This value is also used to align the lighting and view vectors in the
+     * shader—if the light’s Z position is derived proportionally from `cameraZ`
+     * (e.g. `lightZ = cameraZ * 1.5f`), the relative angle between light and
+     * camera remains consistent during zoom, producing stable specular highlights.
+     *
+     * In OpenGL’s right-handed coordinate system (as used by `Matrix.setLookAtM`),
+     * the camera typically looks along the negative Z axis from `(0, 0, cameraZ)`
+     * toward the origin `(0, 0, 0)`.
+     *
+     * @param gloss Surface glossiness in the range [0f, 1f].
      * 0.0f	diffuse, flat -- e.g. matte raw cardboard mid-80s Sierra, SSI
      * 0.3f	faint wide sheen -- e.g. semi-gloss paper
      * 0.6f	soft reflection -- e.g.	laminated mid-90s EA/Interplay boxes
      * 1.0f	tight bright highlight -- e.g. full-gloss Origin / Wing Commander III box
-     */
-    fun draw(vp: FloatArray, rotX: Float, rotY: Float, gloss: Float) {
+     **/
+    fun draw(vp: FloatArray, rotX: Float, rotY: Float, cameraZ: Float, gloss: Float) {
         GLES30.glUseProgram(program)
 
         // Enable vertex attributes
@@ -321,8 +340,8 @@ internal class Cuboid(
         GLES30.glUniformMatrix4fv(uModel, 1, false, model, 0)
 
         // Light setup
-        GLES30.glUniform3f(uLightPos, 3f, 3f, 5f)
-        GLES30.glUniform3f(uViewPos, 0f, 0f, 4f)
+        GLES30.glUniform3f(uLightPos, 0f, 0f, cameraZ * 1.6f)
+        GLES30.glUniform3f(uViewPos, 0f, 0f, cameraZ)
         GLES30.glUniform3f(uLightColor, 1f, 1f, 1f)
         GLES30.glUniform1f(uMaterialGloss, gloss.coerceIn(0f, 1f))
 

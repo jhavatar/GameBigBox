@@ -102,6 +102,7 @@ internal class TexturedCuboidRenderer(
             vp = vpMatrix,
             rotX = angleX,
             rotY = angleY,
+            cameraZ = lastZoomFactor,
             gloss = glossLevel.glossValue,
         )
     }
