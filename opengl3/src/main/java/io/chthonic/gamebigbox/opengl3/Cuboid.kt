@@ -237,9 +237,9 @@ internal class Cuboid(
             floatArrayOf(halfW, halfH, halfD, 1f)
         )
 
-        var minX = 1f;
+        var minX = 1f
         var maxX = -1f
-        var minY = 1f;
+        var minY = 1f
         var maxY = -1f
         val tmp = FloatArray(4)
         for (v in corners) {
