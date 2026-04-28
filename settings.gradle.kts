@@ -24,3 +24,4 @@ rootProject.name = "GameBigBox"
 include(":app")
 include(":opengl3")
 include(":bigbox3d-core")
+include(":bigbox3d-compose")

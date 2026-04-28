@@ -2,6 +2,8 @@ package io.chthonic.bigbox3d.core
 
 import kotlin.math.max
 
+fun cuboidDimensions(front: RawImage, side: RawImage): CuboidDimensions = CuboidDimensionsImpl(front, side)
+
 interface CuboidDimensions {
     val halfWidth: Float
     val halfHeight: Float
