@@ -11,19 +11,34 @@ GameBigBox is an Android library published to JitPack that provides a single Jet
 - **Rendering:** OpenGL ES 3.0 (`GLSurfaceView`)
 - **Image loading:** Coil 2.6.0
 
+## Project Structure
+
+Both modules are KMP (Kotlin Multiplatform) with `androidTarget()` only for now. Source layout follows KMP conventions:
+
+```
+src/
+  commonMain/kotlin/         ← future shared code
+  androidMain/kotlin/        ← Android-specific Kotlin
+  androidMain/AndroidManifest.xml
+  androidMain/res/           ← Android resources (app module only)
+  androidUnitTest/kotlin/    ← JVM unit tests
+  androidInstrumentedTest/kotlin/  ← instrumented tests
+```
+
 ## Modules
 
-- `:app` — Demo app showing multiple `BigBox3D` widgets; also has a bottom-sheet `SettingsPanel` for live-tweaking visual params
-- `:opengl3` — The publishable library (`gamebigbox-opengl3.aar`), published as `com.github.jhavatar.gamebigbox:opengl3` via JitPack
+- `:app` — Demo app (`kotlin("multiplatform")` + `com.android.application`); shows multiple `BigBox3D` widgets with a live-tweaking `SettingsPanel`
+- `:opengl3` — Publishable library (`kotlin("multiplatform")` + `com.android.library`); artifact `gamebigbox-opengl3.aar`, published as `com.github.jhavatar.gamebigbox:opengl3` via JitPack
 
 ## Common Commands
 
 ```bash
-./gradlew :app:assembleDebug          # build demo app
-./gradlew :app:installDebug           # install demo app on device/emulator
-./gradlew :opengl3:assembleRelease    # build library AAR
-./gradlew test                        # run unit tests
-./gradlew connectedAndroidTest        # run instrumented tests
+./gradlew :app:assembleDebug                     # build demo app
+./gradlew :app:installDebug                      # install demo app on device/emulator
+./gradlew :opengl3:assembleRelease               # build library AAR
+./gradlew :opengl3:publishAndroidReleasePublicationToMavenLocal  # publish to local Maven
+./gradlew test                                   # run unit tests
+./gradlew connectedAndroidTest                   # run instrumented tests
 ```
 
 JitPack release is triggered by a Git tag; `jitpack.yml` runs `:opengl3:assembleRelease :opengl3:publishToMavenLocal` with the tag as the version.

@@ -1,10 +1,43 @@
 import java.io.ByteArrayOutputStream
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
+    alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     id("maven-publish")
+}
+
+kotlin {
+    androidTarget {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_11)
+        }
+        publishLibraryVariants("release")
+    }
+
+    sourceSets {
+        androidMain.dependencies {
+            implementation(libs.androidx.core.ktx)
+            implementation(libs.androidx.appcompat)
+            implementation(libs.material)
+            implementation(libs.androidx.activity.compose)
+            implementation(libs.androidx.material3)
+            api(libs.coil)
+            api(libs.coil.compose)
+        }
+        val androidUnitTest by getting {
+            dependencies {
+                implementation(libs.junit)
+            }
+        }
+        val androidInstrumentedTest by getting {
+            dependencies {
+                implementation(libs.androidx.junit)
+                implementation(libs.androidx.espresso.core)
+            }
+        }
+    }
 }
 
 android {
@@ -13,7 +46,6 @@ android {
 
     defaultConfig {
         minSdk = 26
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
     }
@@ -27,25 +59,17 @@ android {
             )
         }
     }
-    publishing {
-        singleVariant("release")
-    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-    kotlinOptions {
-        jvmTarget = "11"
-    }
     buildFeatures {
         compose = true
     }
-
-    // 👇 This changes the actual output AAR file name
     setProperty("archivesBaseName", "gamebigbox-opengl3")
+    sourceSets["main"].manifest.srcFile("src/androidMain/AndroidManifest.xml")
 }
 
-// --- 🔧 Auto-detect version from Git tag ---
 val gitTagVersion: String by lazy {
     try {
         val stdout = ByteArrayOutputStream()
@@ -59,59 +83,38 @@ val gitTagVersion: String by lazy {
     }
 }
 
+// platform() for BOMs is not supported inside kotlin { sourceSets {} } in KMP
+dependencies {
+    add("androidMainImplementation", platform(libs.androidx.compose.bom))
+}
+
 afterEvaluate {
     publishing {
-        publications {
-            create<MavenPublication>("release") {
-                from(components["release"])
-
-                groupId = "com.github.jhavatar.gamebigbox"
-                artifactId = "opengl3"
-                version = gitTagVersion // ✅ automatically uses the latest tag
-
-                pom {
-                    name.set("GameBigBox opengl3")
-                    description.set("3D renderer for PC game big boxes for Android (Compose + OpenGL ES 3.0)")
+        publications.withType<MavenPublication>().configureEach {
+            version = gitTagVersion
+            pom {
+                name.set("GameBigBox opengl3")
+                description.set("3D renderer for PC game big boxes for Android (Compose + OpenGL ES 3.0)")
+                url.set("https://github.com/jhavatar/GameBigBox")
+                licenses {
+                    license {
+                        name.set("Apache License 2.0")
+                        url.set("https://www.apache.org/licenses/LICENSE-2.0")
+                    }
+                }
+                developers {
+                    developer {
+                        id.set("jhavatar")
+                        name.set("JH de Vaal")
+                        email.set("jhdevaal+github@gmail.com")
+                    }
+                }
+                scm {
+                    connection.set("scm:git:github.com/jhavatar/GameBigBox.git")
+                    developerConnection.set("scm:git:ssh://github.com/jhavatar/GameBigBox.git")
                     url.set("https://github.com/jhavatar/GameBigBox")
-
-                    licenses {
-                        license {
-                            name.set("Apache License 2.0")
-                            url.set("https://www.apache.org/licenses/LICENSE-2.0")
-                        }
-                    }
-                    developers {
-                        developer {
-                            id.set("jhavatar")
-                            name.set("JH de Vaal")
-                            email.set("jhdevaal+github@gmail.com")
-                        }
-                    }
-                    scm {
-                        connection.set("scm:git:github.com/jhavatar/GameBigBox.git")
-                        developerConnection.set("scm:git:ssh://github.com/jhavatar/GameBigBox.git")
-                        url.set("https://github.com/jhavatar/GameBigBox")
-                    }
                 }
             }
         }
     }
-}
-
-dependencies {
-    implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.appcompat)
-    implementation(libs.material)
-    implementation(libs.androidx.activity.compose)
-    implementation(platform(libs.androidx.compose.bom))
-
-    implementation(libs.androidx.material3)
-
-    // image
-    api(libs.coil)
-    api(libs.coil.compose)
-
-    testImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
 }
