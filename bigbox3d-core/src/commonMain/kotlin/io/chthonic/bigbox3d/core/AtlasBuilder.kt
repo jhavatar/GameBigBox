@@ -60,8 +60,7 @@ fun List<RawImage>.buildAtlas2x3(
         for (c in 0 until cols) {
             val i = r * cols + c
             val (targetW, targetH) = targetSizes[i]
-            val scaled = this[i].scaleTo(targetW, targetH)
-            scaled.blitInto(atlasPixels, atlasWidth, xOffset, yOffset)
+            this[i].scaleAndBlitInto(atlasPixels, atlasWidth, xOffset, yOffset, targetW, targetH)
 
             regions[faces[i]] = AtlasRegion(
                 u0 = xOffset.toFloat() / atlasWidth,
@@ -77,10 +76,24 @@ fun List<RawImage>.buildAtlas2x3(
     return AtlasMeta(RawImage(atlasWidth, atlasHeight, atlasPixels), regions)
 }
 
-/** Nearest-neighbour scale to [targetWidth] x [targetHeight]. */
-private fun RawImage.scaleTo(targetWidth: Int, targetHeight: Int): RawImage {
-    if (width == targetWidth && height == targetHeight) return this
-    val result = ByteArray(targetWidth * targetHeight * 4)
+/**
+ * Nearest-neighbour scale to [targetWidth] x [targetHeight] and blit directly into [dest]
+ * at ([dstX], [dstY]) — no intermediate ByteArray allocation.
+ */
+private fun RawImage.scaleAndBlitInto(
+    dest: ByteArray, destWidth: Int,
+    dstX: Int, dstY: Int,
+    targetWidth: Int, targetHeight: Int,
+) {
+    if (width == targetWidth && height == targetHeight) {
+        // No scaling needed — fast row-copy path
+        for (row in 0 until height) {
+            val srcOffset = row * width * 4
+            val dstOffset = (dstY + row) * destWidth * 4 + dstX * 4
+            pixels.copyInto(dest, dstOffset, srcOffset, srcOffset + width * 4)
+        }
+        return
+    }
     val xRatio = width.toFloat() / targetWidth
     val yRatio = height.toFloat() / targetHeight
     for (y in 0 until targetHeight) {
@@ -88,22 +101,12 @@ private fun RawImage.scaleTo(targetWidth: Int, targetHeight: Int): RawImage {
         for (x in 0 until targetWidth) {
             val srcX = (x * xRatio).toInt().coerceIn(0, width - 1)
             val src = (srcY * width + srcX) * 4
-            val dst = (y * targetWidth + x) * 4
-            result[dst]     = pixels[src]
-            result[dst + 1] = pixels[src + 1]
-            result[dst + 2] = pixels[src + 2]
-            result[dst + 3] = pixels[src + 3]
+            val dst = (dstY + y) * destWidth * 4 + (dstX + x) * 4
+            dest[dst]     = pixels[src]
+            dest[dst + 1] = pixels[src + 1]
+            dest[dst + 2] = pixels[src + 2]
+            dest[dst + 3] = pixels[src + 3]
         }
-    }
-    return RawImage(targetWidth, targetHeight, result)
-}
-
-/** Copy this image's pixels into [dest] at ([dstX], [dstY]). */
-private fun RawImage.blitInto(dest: ByteArray, destWidth: Int, dstX: Int, dstY: Int) {
-    for (row in 0 until height) {
-        val srcOffset = row * width * 4
-        val dstOffset = (dstY + row) * destWidth * 4 + dstX * 4
-        pixels.copyInto(dest, dstOffset, srcOffset, srcOffset + width * 4)
     }
 }
 

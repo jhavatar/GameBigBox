@@ -4,75 +4,105 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-GameBigBox is an Android library published to JitPack that provides a single Jetpack Compose widget — `BigBox3D` — rendering a 3D textured cuboid (a physical PC game "big box") via OpenGL ES 3.0. Touch gestures support rotation and pinch-to-zoom.
+GameBigBox is a Kotlin Multiplatform project that provides a `BigBox3D` Compose widget rendering a 3D textured cuboid (a physical PC game "big box") via OpenGL ES 3.0. Touch gestures support rotation and pinch-to-zoom.
 
 - **Language:** Kotlin 2.0.21 | **minSdk:** 26 | **compileSdk:** 36
-- **UI:** Jetpack Compose + Material3; GL surface embedded via `AndroidView`
-- **Rendering:** OpenGL ES 3.0 (`GLSurfaceView`)
-- **Image loading:** Coil 2.6.0
+- **Build:** KMP (`kotlin("multiplatform")`) — all modules use `androidTarget()` only for now
+- **UI:** Compose Multiplatform 1.7.1 + Material3; GL surface embedded via `AndroidView` on Android
+- **Rendering:** OpenGL ES 3.0 (`GLSurfaceView`) on Android
+- **Image loading:** Coil 3.0.4 (KMP)
 
-## Project Structure
+## Source Layout
 
-Both modules are KMP (Kotlin Multiplatform) with `androidTarget()` only for now. Source layout follows KMP conventions:
+All modules follow KMP conventions:
 
 ```
 src/
-  commonMain/kotlin/         ← future shared code
-  androidMain/kotlin/        ← Android-specific Kotlin
+  commonMain/kotlin/         ← shared platform-agnostic code
+  androidMain/kotlin/        ← Android-specific implementations
   androidMain/AndroidManifest.xml
   androidMain/res/           ← Android resources (app module only)
-  androidUnitTest/kotlin/    ← JVM unit tests
-  androidInstrumentedTest/kotlin/  ← instrumented tests
+  androidUnitTest/kotlin/
+  androidInstrumentedTest/kotlin/
 ```
 
 ## Modules
 
-- `:app` — Demo app (`kotlin("multiplatform")` + `com.android.application`); shows multiple `BigBox3D` widgets with a live-tweaking `SettingsPanel`
-- `:opengl3` — Publishable library (`kotlin("multiplatform")` + `com.android.library`); artifact `gamebigbox-opengl3.aar`, published as `com.github.jhavatar.gamebigbox:opengl3` via JitPack
+| Module | Type | Purpose |
+|---|---|---|
+| `:bigbox3d-core` | KMP library | All 3D logic — GL abstraction, geometry, atlas building, rendering |
+| `:bigbox3d-compose` | KMP Compose library | `BigBox3D` Compose widget; image loading via Coil 3 |
+| `:opengl3` | Android library (legacy) | Original self-contained Android implementation; still published to JitPack |
+| `:app` | Android demo app | Shows multiple `BigBox3D` widgets with a live `SettingsPanel` |
 
 ## Common Commands
 
 ```bash
 ./gradlew :app:assembleDebug                     # build demo app
-./gradlew :app:installDebug                      # install demo app on device/emulator
-./gradlew :opengl3:assembleRelease               # build library AAR
-./gradlew :opengl3:publishAndroidReleasePublicationToMavenLocal  # publish to local Maven
-./gradlew test                                   # run unit tests
-./gradlew connectedAndroidTest                   # run instrumented tests
+./gradlew :app:installDebug                      # install on device/emulator
+./gradlew :bigbox3d-core:assembleRelease         # build core AAR
+./gradlew :bigbox3d-compose:assembleRelease      # build compose AAR
+./gradlew :opengl3:assembleRelease               # build legacy AAR
+./gradlew test                                   # unit tests
+./gradlew connectedAndroidTest                   # instrumented tests
 ```
 
-JitPack release is triggered by a Git tag; `jitpack.yml` runs `:opengl3:assembleRelease :opengl3:publishToMavenLocal` with the tag as the version.
+## Architecture
 
-## Rendering Pipeline (`:opengl3`)
+### `:bigbox3d-core`
 
-Data flows top-down through these layers:
+Pure KMP — zero platform imports in `commonMain`.
 
-1. **`BigBox3D.kt`** (public `@Composable`) — Accepts `BoxTextureUrls`, loads bitmaps async via Coil on `Dispatchers.IO`, builds atlas on `Dispatchers.Default`, hands result to the GL layer.
+| Source set | Contents |
+|---|---|
+| `commonMain` | `GlApi` interface + GL constants; `RawImage` (RGBA `ByteArray`); `CuboidDimensions`; `AtlasBuilder` (pure-Kotlin nearest-neighbour scale + blit); `Matrix4` (pure-Kotlin port of `android.opengl.Matrix`); `Cuboid` (GL rendering via `GlApi`); `CuboidRenderer` (rotation/zoom state, drives `Cuboid`); visual config enums |
+| `androidMain` | `GlApiImpl` — thin delegation of every `GlApi` call to `GLES30.*` |
 
-2. **Texture models** — Two sealed hierarchies:
-   - `BoxTextureUrls` → `FullBoxTextureUrls` (6 face URLs) or `EquatorialBoxTextureUrls` (4 faces; top/bottom synthesized as black)
-   - `BoxTextureBitmaps` — decoded `Bitmap` versions; calling `.toAtlas()` produces the atlas
+**Key design decisions:**
+- `RawImage(width, height, pixels: ByteArray)` replaces `android.graphics.Bitmap` — no platform types in common code
+- `GlApi` is passed per-call (not stored in `Cuboid`) so GL context recreation is safe
+- `Matrix4` is a pure-Kotlin port of `android.opengl.Matrix` — same column-major `FloatArray` API
+- Atlas building scales and blits directly into the atlas buffer (no intermediate `ByteArray` per face)
+- `java.nio.FloatBuffer`/`ShortBuffer` used in `commonMain` for now; will need platform abstraction when jsMain/wasmMain targets are added
 
-3. **`BoxTextureBitmaps.buildAtlas2x3()`** — Packs all 6 face bitmaps into a single 2-col × 3-row `Bitmap` atlas and records normalized UV regions per face (`Map<RegionFace, AtlasRegion>`).
+### `:bigbox3d-compose`
 
-4. **`CuboidDimensions.kt`** — Derives `halfWidth/halfHeight/halfDepth` from face aspect ratios, normalized so the largest dimension is 1.0.
+KMP Compose widget layer. Depends on `:bigbox3d-core` via `api()` (so core types are re-exported to consumers).
 
-5. **`TexturedCuboidRenderer.kt`** (`GLSurfaceView.Renderer`) — Manages view/projection matrices, camera zoom, and rotation state (touch-driven + auto-rotate); delegates draw calls to `Cuboid`.
+| Source set | Contents |
+|---|---|
+| `commonMain` | `BigBox3D` composable (public API); `BoxTextureUrls` sealed interface (`FullBoxTextureUrls` / `EquatorialBoxTextureUrls`); `expect BigBox3DGlSurface`; `expect loadRawImageFromUrl` |
+| `androidMain` | `actual BigBox3DGlSurface` — `GLSurfaceView` in `AndroidView`, bridges `Renderer` callbacks to `CuboidRenderer`, handles pinch/rotate gestures; `actual loadRawImageFromUrl` — Coil 3 → `BitmapImage` → ARGB→RGBA extraction; internet permission in manifest |
 
-6. **`Cuboid.kt`** — Core GL object: builds vertex/UV/normal/index buffers for 24 vertices across 6 faces, compiles two inline GLSL ES 3.0 shader programs, uploads the atlas as a single `GL_TEXTURE_2D`, and draws all 6 faces in one `glDrawElements` call.
-   - *Main shader*: Phong-style diffuse + specular lighting; `uMaterialGloss` controls shininess
-   - *Shadow shader*: screen-space radial oval shadow using `smoothstep` fade
+**Data flow in `BigBox3D`:**
+1. `LaunchedEffect` loads URLs → `List<RawImage>` on `Dispatchers.IO` (capped at 1024 px via Coil)
+2. Builds `BoxTextureAtlas` on `Dispatchers.Default` (`buildAtlas2x3` + `cuboidDimensions`)
+3. Passes atlas to `BigBox3DGlSurface` (expect/actual); shows `CircularProgressIndicator` while loading
 
-## Visual Config Enums
+**Image size cap:** `loadRawImageFromUrl` requests `Size(1024, 1024)` from Coil to avoid large heap allocations — raw RGBA pixel data lives on the JVM heap unlike the native-memory `Bitmap` used in `:opengl3`.
+
+### `:opengl3` (legacy)
+
+Self-contained Android-only implementation using `android.graphics.Bitmap` and `GLUtils.texImage2D`. Still publishable to JitPack as `com.github.jhavatar.gamebigbox:opengl3`. Not used by `:app` any more.
+
+## Visual Config Enums (in `:bigbox3d-core`)
 
 | Enum | Values |
-|------|--------|
+|---|---|
 | `GlossLevel` | MATTE (0.0) → HIGH_GLOSS (1.0) |
 | `ShadowOpacity` | NONE → FULL (0.0–1.0 alpha) |
 | `ShadowFade` | SUPER_SOFT / SOFT / REALISTIC / DRAMATIC |
 
+## Adding a New Platform Target
+
+To add desktop/JS/Wasm support, two files are needed per platform:
+
+1. `bigbox3d-core/src/<platform>Main/…/GlApiImpl.kt` — `actual class GlApiImpl` delegating to the platform GL API (LWJGL3 for desktop, WebGL2 for JS/Wasm)
+2. `bigbox3d-compose/src/<platform>Main/…/BigBox3DGlSurface.<platform>.kt` — `actual fun BigBox3DGlSurface` embedding a GL surface in the platform's Compose interop
+3. `bigbox3d-compose/src/<platform>Main/…/ImageLoading.<platform>.kt` — `actual fun loadRawImageFromUrl` using the platform image loader
+
 ## Known Issues / Quirks
 
-- Internal class `EquitorialBoxTextureBitmaps` contains a typo ("Equitorial") — the public `EquatorialBoxTextureUrls` is spelled correctly.
-- Toggle `SHOW_DEBUG_OVERLAY = true` in `BigBox3D.kt` to draw red border overlays on each atlas region for UV debugging.
-- The `:app` module references `:opengl3` as a local project dependency; the JitPack-published dependency line is commented out in `app/build.gradle.kts`.
+- `expect @Composable fun BigBox3DGlSurface` triggers an IDE warning ("has no corresponding expected declaration") — this is a false positive caused by the Compose compiler transforming `@Composable` signatures at the IR level. The build succeeds; the warning disappears when additional platform targets are added.
+- The `expect`/`actual` warning "declared in the same module" fires because `:bigbox3d-compose` currently has only one target (`androidTarget`). It resolves naturally when more targets are added.
+- Internal class `EquitorialBoxTextureBitmaps` in `:opengl3` contains a typo ("Equitorial") — the public `EquatorialBoxTextureUrls` is spelled correctly.

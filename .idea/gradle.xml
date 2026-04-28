@@ -11,6 +11,8 @@
           <set>
             <option value="$PROJECT_DIR$" />
             <option value="$PROJECT_DIR$/app" />
+            <option value="$PROJECT_DIR$/bigbox3d-compose" />
+            <option value="$PROJECT_DIR$/bigbox3d-core" />
             <option value="$PROJECT_DIR$/opengl3" />
           </set>
         </option>

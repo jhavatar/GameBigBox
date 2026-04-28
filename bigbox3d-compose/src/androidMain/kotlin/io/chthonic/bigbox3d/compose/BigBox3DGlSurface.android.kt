@@ -82,9 +82,9 @@ private fun GLSurfaceView.setupTouchHandling(
     var isScaling = false
     var scaleFactor = 1f
 
-    val isGestureActive get() = isScaling || isRotating
-    val notifyGesture = { onGestureActive(isGestureActive) }
-    val updateDisallow = { parent.requestDisallowInterceptTouchEvent(isGestureActive) }
+    val isGestureActive = { isScaling || isRotating }
+    val notifyGesture = { onGestureActive(isGestureActive()) }
+    val updateDisallow = { parent.requestDisallowInterceptTouchEvent(isGestureActive()) }
 
     val scaleDetector = ScaleGestureDetector(
         context,

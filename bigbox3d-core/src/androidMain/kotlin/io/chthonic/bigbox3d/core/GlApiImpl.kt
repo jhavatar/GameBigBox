@@ -6,7 +6,7 @@ import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import java.nio.ShortBuffer
 
-internal class GlApiImpl : GlApi {
+class GlApiImpl : GlApi {
 
     override fun glCreateShader(type: Int) = GLES30.glCreateShader(type)
     override fun glShaderSource(shader: Int, source: String) = GLES30.glShaderSource(shader, source)
@@ -39,11 +39,7 @@ internal class GlApiImpl : GlApi {
     override fun glBindTexture(target: Int, texture: Int) = GLES30.glBindTexture(target, texture)
     override fun glTexParameteri(target: Int, pname: Int, param: Int) = GLES30.glTexParameteri(target, pname, param)
     override fun glTexImage2D(width: Int, height: Int, pixels: ByteArray) {
-        val buf = ByteBuffer.allocateDirect(pixels.size).order(ByteOrder.nativeOrder()).also {
-            it.put(pixels)
-            it.position(0)
-        }
-        GLES30.glTexImage2D(GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA, width, height, 0, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, buf)
+        GLES30.glTexImage2D(GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA, width, height, 0, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, ByteBuffer.wrap(pixels))
     }
     override fun glDeleteTextures(textures: IntArray) = GLES30.glDeleteTextures(textures.size, textures, 0)
 

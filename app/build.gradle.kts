@@ -15,7 +15,7 @@ kotlin {
 
     sourceSets {
         androidMain.dependencies {
-            implementation(project(path = ":opengl3"))
+            implementation(project(path = ":bigbox3d-compose"))
             implementation(libs.androidx.core.ktx)
             implementation(libs.androidx.lifecycle.runtime.ktx)
             implementation(libs.androidx.activity.compose)

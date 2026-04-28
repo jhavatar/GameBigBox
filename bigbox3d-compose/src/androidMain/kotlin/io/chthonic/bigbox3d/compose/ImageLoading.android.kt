@@ -6,11 +6,16 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
+import coil3.request.allowHardware
+import coil3.size.Size
 import io.chthonic.bigbox3d.core.RawImage
+
+private const val MAX_IMAGE_PX = 1024
 
 internal actual suspend fun loadRawImageFromUrl(url: String, context: PlatformContext): RawImage {
     val request = ImageRequest.Builder(context)
         .data(url)
+        .size(Size(MAX_IMAGE_PX, MAX_IMAGE_PX))
         .allowHardware(false)
         .build()
     val result = SingletonImageLoader.get(context).execute(request)
