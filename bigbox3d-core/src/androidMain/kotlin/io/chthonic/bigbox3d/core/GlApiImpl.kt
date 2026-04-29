@@ -3,8 +3,6 @@ package io.chthonic.bigbox3d.core
 import android.opengl.GLES30
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.nio.FloatBuffer
-import java.nio.ShortBuffer
 
 class GlApiImpl : GlApi {
 
@@ -50,13 +48,33 @@ class GlApiImpl : GlApi {
     override fun glUniform2f(location: Int, x: Float, y: Float) = GLES30.glUniform2f(location, x, y)
     override fun glUniform1f(location: Int, x: Float) = GLES30.glUniform1f(location, x)
 
+    override fun glGenBuffers(n: Int): IntArray {
+        val result = IntArray(n)
+        GLES30.glGenBuffers(n, result, 0)
+        return result
+    }
+    override fun glBindBuffer(target: Int, buffer: Int) = GLES30.glBindBuffer(target, buffer)
+    override fun glBufferData(target: Int, data: FloatArray, usage: Int) {
+        val buf = ByteBuffer.allocateDirect(data.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+        buf.put(data)
+        buf.position(0)
+        GLES30.glBufferData(target, data.size * 4, buf, usage)
+    }
+    override fun glBufferData(target: Int, data: ShortArray, usage: Int) {
+        val buf = ByteBuffer.allocateDirect(data.size * 2).order(ByteOrder.nativeOrder()).asShortBuffer()
+        buf.put(data)
+        buf.position(0)
+        GLES30.glBufferData(target, data.size * 2, buf, usage)
+    }
+    override fun glDeleteBuffers(buffers: IntArray) = GLES30.glDeleteBuffers(buffers.size, buffers, 0)
+
     override fun glEnableVertexAttribArray(index: Int) = GLES30.glEnableVertexAttribArray(index)
     override fun glDisableVertexAttribArray(index: Int) = GLES30.glDisableVertexAttribArray(index)
-    override fun glVertexAttribPointer(index: Int, size: Int, type: Int, normalized: Boolean, stride: Int, buffer: FloatBuffer) =
-        GLES30.glVertexAttribPointer(index, size, type, normalized, stride, buffer)
+    override fun glVertexAttribPointer(index: Int, size: Int, type: Int, normalized: Boolean, stride: Int, offset: Int) =
+        GLES30.glVertexAttribPointer(index, size, type, normalized, stride, offset)
 
-    override fun glDrawElements(mode: Int, count: Int, type: Int, indices: ShortBuffer) =
-        GLES30.glDrawElements(mode, count, type, indices)
+    override fun glDrawElements(mode: Int, count: Int, type: Int, offset: Int) =
+        GLES30.glDrawElements(mode, count, type, offset)
     override fun glDrawArrays(mode: Int, first: Int, count: Int) = GLES30.glDrawArrays(mode, first, count)
 
     override fun glEnable(cap: Int) = GLES30.glEnable(cap)

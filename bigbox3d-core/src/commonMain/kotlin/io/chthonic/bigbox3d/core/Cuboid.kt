@@ -1,15 +1,18 @@
 package io.chthonic.bigbox3d.core
 
+import io.chthonic.bigbox3d.core.GlApi.Companion.GL_ARRAY_BUFFER
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_BACK
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_BLEND
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_COMPILE_STATUS
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_DEPTH_TEST
+import io.chthonic.bigbox3d.core.GlApi.Companion.GL_ELEMENT_ARRAY_BUFFER
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_FLOAT
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_FRAGMENT_SHADER
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_LINEAR
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_LINK_STATUS
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_ONE_MINUS_SRC_ALPHA
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_SRC_ALPHA
+import io.chthonic.bigbox3d.core.GlApi.Companion.GL_STATIC_DRAW
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_TEXTURE_2D
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_TEXTURE_MAG_FILTER
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_TEXTURE_MIN_FILTER
@@ -23,10 +26,6 @@ import io.chthonic.bigbox3d.core.RegionFace.FRONT
 import io.chthonic.bigbox3d.core.RegionFace.LEFT
 import io.chthonic.bigbox3d.core.RegionFace.RIGHT
 import io.chthonic.bigbox3d.core.RegionFace.TOP
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.nio.FloatBuffer
-import java.nio.ShortBuffer
 
 internal class Cuboid(
     gl: GlApi,
@@ -37,11 +36,8 @@ internal class Cuboid(
     private val halfH = atlas.halfHeight
     private val halfD = atlas.halfDepth
 
-    private val vertexBuffer: FloatBuffer
-    private val texBuffer: FloatBuffer
-    private val normalBuffer: FloatBuffer
-    private val indexBuffer: ShortBuffer
-    private val shadowVertexBuf: FloatBuffer
+    // VBO IDs: [vertex, texCoord, normal, index, shadowVertex]
+    private val vboIds: IntArray
 
     private val textureId: Int
     private val program: Int
@@ -81,11 +77,22 @@ internal class Cuboid(
             12,14,13, 13,14,15,   16,18,17, 17,18,19,   20,22,21, 21,22,23,
         )
 
-        vertexBuffer    = vertices.toDirectFloatBuffer()
-        texBuffer       = texCoords.toDirectFloatBuffer()
-        normalBuffer    = normals.toDirectFloatBuffer()
-        indexBuffer     = indices.toDirectShortBuffer()
-        shadowVertexBuf = floatArrayOf(-1f,-1f, 1f,-1f, -1f,1f, 1f,1f).toDirectFloatBuffer()
+        vboIds = gl.glGenBuffers(5)
+
+        gl.glBindBuffer(GL_ARRAY_BUFFER, vboIds[0])
+        gl.glBufferData(GL_ARRAY_BUFFER, vertices, GL_STATIC_DRAW)
+
+        gl.glBindBuffer(GL_ARRAY_BUFFER, vboIds[1])
+        gl.glBufferData(GL_ARRAY_BUFFER, texCoords, GL_STATIC_DRAW)
+
+        gl.glBindBuffer(GL_ARRAY_BUFFER, vboIds[2])
+        gl.glBufferData(GL_ARRAY_BUFFER, normals, GL_STATIC_DRAW)
+
+        gl.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vboIds[3])
+        gl.glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices, GL_STATIC_DRAW)
+
+        gl.glBindBuffer(GL_ARRAY_BUFFER, vboIds[4])
+        gl.glBufferData(GL_ARRAY_BUFFER, floatArrayOf(-1f,-1f, 1f,-1f, -1f,1f, 1f,1f), GL_STATIC_DRAW)
 
         val vShader = """
             #version 300 es
@@ -217,7 +224,8 @@ internal class Cuboid(
         gl.glUniform2f(gl.glGetUniformLocation(shadowProgram, "uSmoothStep"), shadowFadeStartRatio, shadowFadeEndRatio)
 
         gl.glEnableVertexAttribArray(0)
-        gl.glVertexAttribPointer(0, 2, GL_FLOAT, false, 0, shadowVertexBuf)
+        gl.glBindBuffer(GL_ARRAY_BUFFER, vboIds[4])
+        gl.glVertexAttribPointer(0, 2, GL_FLOAT, false, 0, 0)
         gl.glDrawArrays(GL_TRIANGLE_STRIP, 0, 4)
         gl.glDisableVertexAttribArray(0)
 
@@ -230,9 +238,15 @@ internal class Cuboid(
         gl.glEnableVertexAttribArray(0)
         gl.glEnableVertexAttribArray(1)
         gl.glEnableVertexAttribArray(2)
-        gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, vertexBuffer)
-        gl.glVertexAttribPointer(1, 2, GL_FLOAT, false, 0, texBuffer)
-        gl.glVertexAttribPointer(2, 3, GL_FLOAT, false, 0, normalBuffer)
+
+        gl.glBindBuffer(GL_ARRAY_BUFFER, vboIds[0])
+        gl.glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0)
+
+        gl.glBindBuffer(GL_ARRAY_BUFFER, vboIds[1])
+        gl.glVertexAttribPointer(1, 2, GL_FLOAT, false, 0, 0)
+
+        gl.glBindBuffer(GL_ARRAY_BUFFER, vboIds[2])
+        gl.glVertexAttribPointer(2, 3, GL_FLOAT, false, 0, 0)
 
         val model = FloatArray(16).also {
             Matrix4.setIdentityM(it, 0)
@@ -249,7 +263,8 @@ internal class Cuboid(
         gl.glUniform1f(gl.glGetUniformLocation(program, "uMaterialGloss"), gloss.coerceIn(0f, 1f))
 
         gl.glBindTexture(GL_TEXTURE_2D, textureId)
-        gl.glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_SHORT, indexBuffer)
+        gl.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vboIds[3])
+        gl.glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_SHORT, 0)
 
         gl.glDisableVertexAttribArray(0)
         gl.glDisableVertexAttribArray(1)
@@ -260,6 +275,7 @@ internal class Cuboid(
         gl.glDeleteTextures(intArrayOf(textureId))
         gl.glDeleteProgram(program)
         gl.glDeleteProgram(shadowProgram)
+        gl.glDeleteBuffers(vboIds)
     }
 }
 
@@ -288,11 +304,3 @@ private fun GlApi.createProgram(vs: String, fs: String): Int {
     }
     return prog
 }
-
-private fun FloatArray.toDirectFloatBuffer(): FloatBuffer =
-    ByteBuffer.allocateDirect(size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
-        .also { it.put(this); it.position(0) }
-
-private fun ShortArray.toDirectShortBuffer(): ShortBuffer =
-    ByteBuffer.allocateDirect(size * 2).order(ByteOrder.nativeOrder()).asShortBuffer()
-        .also { it.put(this); it.position(0) }

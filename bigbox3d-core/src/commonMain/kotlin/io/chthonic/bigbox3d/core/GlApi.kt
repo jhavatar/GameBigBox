@@ -1,13 +1,8 @@
 package io.chthonic.bigbox3d.core
 
-import java.nio.FloatBuffer
-import java.nio.ShortBuffer
-
 /**
  * Platform-agnostic subset of OpenGL ES 3.0 / WebGL2 used by bigbox3d-core.
- *
- * Note: FloatBuffer/ShortBuffer are JVM types and will need platform abstraction
- * when jsMain/wasmMain targets are added.
+ * All geometry is uploaded via VBOs so no platform-specific buffer types are needed.
  */
 interface GlApi {
 
@@ -41,13 +36,22 @@ interface GlApi {
     fun glUniform2f(location: Int, x: Float, y: Float)
     fun glUniform1f(location: Int, x: Float)
 
+    // --- buffers (VBO) ---
+    fun glGenBuffers(n: Int): IntArray
+    fun glBindBuffer(target: Int, buffer: Int)
+    fun glBufferData(target: Int, data: FloatArray, usage: Int)
+    fun glBufferData(target: Int, data: ShortArray, usage: Int)
+    fun glDeleteBuffers(buffers: IntArray)
+
     // --- vertex attributes ---
     fun glEnableVertexAttribArray(index: Int)
     fun glDisableVertexAttribArray(index: Int)
-    fun glVertexAttribPointer(index: Int, size: Int, type: Int, normalized: Boolean, stride: Int, buffer: FloatBuffer)
+    /** Uses the currently bound GL_ARRAY_BUFFER; offset is a byte offset into that buffer. */
+    fun glVertexAttribPointer(index: Int, size: Int, type: Int, normalized: Boolean, stride: Int, offset: Int)
 
     // --- drawing ---
-    fun glDrawElements(mode: Int, count: Int, type: Int, indices: ShortBuffer)
+    /** Uses the currently bound GL_ELEMENT_ARRAY_BUFFER; offset is a byte offset into that buffer. */
+    fun glDrawElements(mode: Int, count: Int, type: Int, offset: Int)
     fun glDrawArrays(mode: Int, first: Int, count: Int)
 
     // --- render state ---
@@ -104,6 +108,11 @@ interface GlApi {
         // Clear bits
         const val GL_COLOR_BUFFER_BIT   = 0x4000
         const val GL_DEPTH_BUFFER_BIT   = 0x0100
+
+        // Buffers (VBO)
+        const val GL_ARRAY_BUFFER         = 0x8892
+        const val GL_ELEMENT_ARRAY_BUFFER = 0x8893
+        const val GL_STATIC_DRAW          = 0x88E4
 
         // Info
         const val GL_VERSION            = 0x1F02
