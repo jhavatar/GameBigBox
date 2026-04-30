@@ -50,7 +50,7 @@ fun BigBox3D(
     LaunchedEffect(textureUrls) {
         atlas = null
         try {
-            val rawImages = withContext(Dispatchers.IO) {
+            val rawImages = withContext(ioDispatcher) {
                 textureUrls.toRawImages { url -> loadRawImageFromUrl(url, platformContext) }
             }
             atlas = withContext(Dispatchers.Default) {
