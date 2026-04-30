@@ -1,8 +1,10 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.android.application)
+    alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.kotlin.compose)
 }
 
@@ -13,16 +15,25 @@ kotlin {
         }
     }
 
+    @OptIn(ExperimentalWasmDsl::class)
+    wasmJs {
+        browser()
+        binaries.executable()
+    }
+
     sourceSets {
-        androidMain.dependencies {
+        commonMain.dependencies {
             implementation(project(path = ":bigbox3d-compose"))
+            implementation(compose.runtime)
+            implementation(compose.foundation)
+            implementation(compose.ui)
+            implementation(compose.material3)
+        }
+        androidMain.dependencies {
             implementation(libs.androidx.core.ktx)
             implementation(libs.androidx.lifecycle.runtime.ktx)
             implementation(libs.androidx.activity.compose)
-            implementation(libs.androidx.ui)
-            implementation(libs.androidx.ui.graphics)
             implementation(libs.androidx.ui.tooling.preview)
-            implementation(libs.androidx.material3)
         }
         val androidUnitTest by getting {
             dependencies {
