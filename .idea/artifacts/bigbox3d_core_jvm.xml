@@ -1,0 +1,6 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="bigbox3d-core-jvm">
+    <output-path>$PROJECT_DIR$/bigbox3d-core/build/libs</output-path>
+    <root id="archive" name="bigbox3d-core-jvm.jar" />
+  </artifact>
+</component>
