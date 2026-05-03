@@ -14,6 +14,7 @@ coil = "2.6.0"
 coil3 = "3.0.4"
 composeMultiplatform = "1.7.1"
 gamebigbox = "v1.1.0"
+lwjgl = "3.3.4"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -44,6 +45,10 @@ coil3-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil3
 coil3-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil3" }
 
 gamebigbox = { module = "com.github.jhavatar:gamebigbox", version.ref = "gamebigbox" }
+
+# LWJGL3 (desktop/JVM OpenGL)
+lwjgl = { group = "org.lwjgl", name = "lwjgl", version.ref = "lwjgl" }
+lwjgl-opengl = { group = "org.lwjgl", name = "lwjgl-opengl", version.ref = "lwjgl" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -20,6 +20,8 @@ kotlin {
         browser()
     }
 
+    jvm()
+
     sourceSets {
         androidMain.dependencies {
             // GLES30 comes from the Android SDK — no extra dependency needed
@@ -28,6 +30,10 @@ kotlin {
             dependencies {
                 implementation(libs.junit)
             }
+        }
+        jvmMain.dependencies {
+            implementation(libs.lwjgl)
+            implementation(libs.lwjgl.opengl)
         }
     }
 }
