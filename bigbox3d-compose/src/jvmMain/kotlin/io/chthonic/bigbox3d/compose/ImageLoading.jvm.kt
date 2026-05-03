@@ -2,52 +2,48 @@ package io.chthonic.bigbox3d.compose
 
 import coil3.PlatformContext
 import io.chthonic.bigbox3d.core.RawImage
-import java.awt.RenderingHints
-import java.awt.image.BufferedImage
+import org.jetbrains.skia.Bitmap
+import org.jetbrains.skia.ColorAlphaType
+import org.jetbrains.skia.ColorType
+import org.jetbrains.skia.Image as SkiaImage
+import org.jetbrains.skia.ImageInfo
+import org.jetbrains.skia.Rect
+import org.jetbrains.skia.Surface
 import java.net.URI
-import javax.imageio.ImageIO
 
 private const val MAX_IMAGE_PX = 1024
 
 internal actual suspend fun loadRawImageFromUrl(url: String, context: PlatformContext): RawImage {
-    val original = try {
-        ImageIO.read(URI(url).toURL()) ?: throw ImageLoadException()
+    val bytes = try {
+        val conn = URI(url).toURL().openConnection()
+        conn.connectTimeout = 10_000
+        conn.readTimeout = 30_000
+        conn.getInputStream().use { it.readBytes() }
     } catch (e: Exception) {
         throw ImageLoadException(e)
     }
-    return original.scaledTo(MAX_IMAGE_PX).toRawImage()
+    // SkiaImage.makeFromEncoded handles WebP (and all other formats) via bundled
+    // Skia/libwebp — unlike javax.imageio which has no WebP support.
+    val src = SkiaImage.makeFromEncoded(bytes) ?: throw ImageLoadException()
+    val (w, h) = scaledDimensions(src.width, src.height, MAX_IMAGE_PX)
+    val info = ImageInfo(w, h, ColorType.RGBA_8888, ColorAlphaType.UNPREMUL)
+    val bitmap = Bitmap()
+    return try {
+        bitmap.allocPixels(info)
+        Surface.makeRasterN32Premul(w, h).use { surface ->
+            surface.canvas.drawImageRect(src, Rect.makeWH(w.toFloat(), h.toFloat()))
+            surface.readPixels(bitmap, 0, 0)
+        }
+        val pixels = bitmap.readPixels(info, w * 4, 0, 0) ?: throw ImageLoadException()
+        RawImage(w, h, pixels)
+    } finally {
+        bitmap.close()
+        src.close()
+    }
 }
 
-private fun BufferedImage.scaledTo(maxPx: Int): BufferedImage {
-    if (width <= maxPx && height <= maxPx) return this
+private fun scaledDimensions(width: Int, height: Int, maxPx: Int): Pair<Int, Int> {
+    if (width <= maxPx && height <= maxPx) return width to height
     val scale = maxPx.toFloat() / maxOf(width, height)
-    val w = (width * scale).toInt().coerceAtLeast(1)
-    val h = (height * scale).toInt().coerceAtLeast(1)
-    val scaled = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
-    val g = scaled.createGraphics()
-    g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
-    g.drawImage(this, 0, 0, w, h, null)
-    g.dispose()
-    return scaled
-}
-
-private fun BufferedImage.toRawImage(): RawImage {
-    val src = if (type == BufferedImage.TYPE_INT_ARGB) this else {
-        val c = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
-        val g = c.createGraphics()
-        g.drawImage(this, 0, 0, null)
-        g.dispose()
-        c
-    }
-    val argbPixels = IntArray(width * height)
-    src.getRGB(0, 0, width, height, argbPixels, 0, width)
-    val rgba = ByteArray(width * height * 4)
-    for (i in argbPixels.indices) {
-        val px = argbPixels[i]
-        rgba[i * 4 + 0] = ((px shr 16) and 0xFF).toByte() // R
-        rgba[i * 4 + 1] = ((px shr 8)  and 0xFF).toByte() // G
-        rgba[i * 4 + 2] = (px          and 0xFF).toByte() // B
-        rgba[i * 4 + 3] = ((px shr 24) and 0xFF).toByte() // A
-    }
-    return RawImage(width, height, rgba)
+    return (width * scale).toInt().coerceAtLeast(1) to (height * scale).toInt().coerceAtLeast(1)
 }

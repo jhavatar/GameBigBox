@@ -21,6 +21,8 @@ kotlin {
         binaries.executable()
     }
 
+    jvm()
+
     sourceSets {
         commonMain.dependencies {
             implementation(project(path = ":bigbox3d-compose"))
@@ -47,6 +49,25 @@ kotlin {
                 implementation(libs.androidx.ui.test.junit4)
             }
         }
+        jvmMain.dependencies {
+            implementation(compose.desktop.currentOs)
+            val lwjglVersion = libs.versions.lwjgl.get()
+            listOf("lwjgl", "lwjgl-opengl", "lwjgl-glfw").forEach { lib ->
+                listOf(
+                    "natives-macos", "natives-macos-arm64",
+                    "natives-linux", "natives-linux-arm64",
+                    "natives-windows", "natives-windows-x86",
+                ).forEach { native ->
+                    runtimeOnly("org.lwjgl:$lib:$lwjglVersion:$native")
+                }
+            }
+        }
+    }
+}
+
+compose.desktop {
+    application {
+        mainClass = "io.chthonic.gamebigbox.MainKt"
     }
 }
 

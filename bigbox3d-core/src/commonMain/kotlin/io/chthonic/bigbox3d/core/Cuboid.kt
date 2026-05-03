@@ -94,8 +94,16 @@ internal class Cuboid(
         gl.glBindBuffer(GL_ARRAY_BUFFER, vboIds[4])
         gl.glBufferData(GL_ARRAY_BUFFER, floatArrayOf(-1f,-1f, 1f,-1f, -1f,1f, 1f,1f), GL_STATIC_DRAW)
 
+        // Desktop OpenGL uses GLSL 330 core; OpenGL ES / WebGL uses GLSL 300 es.
+        // "ES" appears in Android ("OpenGL ES 3.x") and WebGL ("WebGL 2.0 …ES…") version strings.
+        val isEs = gl.glGetString(GlApi.GL_VERSION).let {
+            it.contains("OpenGL ES", ignoreCase = true) || it.startsWith("WebGL", ignoreCase = true)
+        }
+        val ver       = if (isEs) "#version 300 es"                        else "#version 330 core"
+        val verPrec   = if (isEs) "#version 300 es\nprecision mediump float;" else "#version 330 core"
+
         val vShader = """
-            #version 300 es
+            $ver
             layout(location = 0) in vec4 aPos;
             layout(location = 1) in vec2 aTex;
             layout(location = 2) in vec3 aNormal;
@@ -113,8 +121,7 @@ internal class Cuboid(
         """.trimIndent()
 
         val fShader = """
-            #version 300 es
-            precision mediump float;
+            $verPrec
             uniform sampler2D uTex;
             uniform vec3 uLightPos;
             uniform vec3 uViewPos;
@@ -140,15 +147,14 @@ internal class Cuboid(
         """.trimIndent()
 
         val shadowVert = """
-            #version 300 es
+            $ver
             layout(location = 0) in vec2 aPos;
             out vec2 vPos;
             void main() { vPos = aPos; gl_Position = vec4(aPos, 0.0, 1.0); }
         """.trimIndent()
 
         val shadowFrag = """
-            #version 300 es
-            precision mediump float;
+            $verPrec
             in vec2 vPos;
             uniform vec2 uCenter;
             uniform vec2 uScale;

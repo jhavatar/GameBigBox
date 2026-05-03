@@ -1,4 +1,7 @@
-@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@file:OptIn(
+    kotlinx.coroutines.ExperimentalCoroutinesApi::class,
+    kotlinx.coroutines.DelicateCoroutinesApi::class,
+)
 
 package io.chthonic.bigbox3d.compose
 
@@ -44,8 +47,8 @@ import org.lwjgl.glfw.GLFW.glfwDestroyWindow
 import org.lwjgl.glfw.GLFW.glfwInit
 import org.lwjgl.glfw.GLFW.glfwMakeContextCurrent
 import org.lwjgl.glfw.GLFW.glfwWindowHint
+import org.lwjgl.opengl.CGL
 import org.lwjgl.opengl.GL
-import org.lwjgl.opengl.GL11.GL_DEPTH_COMPONENT
 import org.lwjgl.opengl.GL11.GL_LINEAR
 import org.lwjgl.opengl.GL11.GL_RGBA
 import org.lwjgl.opengl.GL11.GL_TEXTURE_2D
@@ -76,9 +79,11 @@ import org.lwjgl.opengl.GL30.glGenRenderbuffers
 import org.lwjgl.opengl.GL30.glGenVertexArrays
 import org.lwjgl.opengl.GL30.glRenderbufferStorage
 import org.lwjgl.system.Configuration
+import org.lwjgl.system.MemoryStack
 import java.awt.image.BufferedImage
 import java.nio.ByteBuffer
-import java.util.concurrent.atomic.AtomicBoolean
+
+private val isMacOs = System.getProperty("os.name")?.lowercase()?.startsWith("mac") ?: false
 
 @Composable
 internal actual fun BigBox3DGlSurface(
@@ -145,8 +150,8 @@ internal actual fun BigBox3DGlSurface(
             .onSizeChanged { size = it }
             .pointerInput(Unit) {
                 detectDragGestures(
-                    onDragStart = { onGestureActive(true) },
-                    onDragEnd   = { onGestureActive(false) },
+                    onDragStart  = { onGestureActive(true) },
+                    onDragEnd    = { onGestureActive(false) },
                     onDragCancel = { onGestureActive(false) },
                 ) { _, dragAmount ->
                     renderer.handleTouchDrag(dragAmount.x, dragAmount.y)
@@ -180,7 +185,9 @@ internal actual fun BigBox3DGlSurface(
 private class GlContext {
     val dispatcher = newSingleThreadContext("BigBox3D-GL")
 
-    private var window = 0L
+    private var cglCtx = 0L     // macOS: CGL context handle
+    private var glfwWin = 0L    // Linux/Windows: GLFW window handle
+
     private var fbo = 0
     private var fboTex = 0
     private var fboRbo = 0
@@ -188,9 +195,16 @@ private class GlContext {
     private var fboH = 0
 
     fun init() {
-        GlfwManager.ensureInit()
-        window = GlfwManager.createOffscreenWindow()
-        glfwMakeContextCurrent(window)
+        if (isMacOs) {
+            // CGL is thread-safe and does not require the AppKit main thread,
+            // unlike GLFW on macOS which triggers HIToolbox's dispatch_assert_queue.
+            cglCtx = createCglContext()
+            CGL.CGLSetCurrentContext(cglCtx)
+        } else {
+            GlfwManager.ensureInit()
+            glfwWin = GlfwManager.createOffscreenWindow()
+            glfwMakeContextCurrent(glfwWin)
+        }
         GL.createCapabilities()
     }
 
@@ -240,31 +254,69 @@ private class GlContext {
 
     fun destroy() {
         destroyFbo()
-        if (window != 0L) {
-            glfwDestroyWindow(window)
-            window = 0L
+        if (cglCtx != 0L) {
+            CGL.CGLSetCurrentContext(0L)
+            CGL.CGLDestroyContext(cglCtx)
+            cglCtx = 0L
+        }
+        if (glfwWin != 0L) {
+            val w = glfwWin; glfwWin = 0L
+            glfwMakeContextCurrent(0L)
+            GlfwManager.destroyWindow(w)
         }
         dispatcher.close()
     }
 
     private fun destroyFbo() {
         if (fbo != 0) {
-            glDeleteFramebuffers(fbo);    fbo    = 0
-            glDeleteTextures(fboTex);     fboTex = 0
+            glDeleteFramebuffers(fbo);     fbo    = 0
+            glDeleteTextures(fboTex);      fboTex = 0
             glDeleteRenderbuffers(fboRbo); fboRbo = 0
             fboW = 0; fboH = 0
         }
     }
 }
 
+// Creates a headless CGL context on macOS. CGL is the low-level Core OpenGL
+// layer and is fully thread-safe — no AppKit/HIToolbox involvement.
+private fun createCglContext(): Long {
+    MemoryStack.stackPush().use { stack ->
+        val attrs = stack.ints(
+            CGL.kCGLPFAOpenGLProfile, CGL.kCGLOGLPVersion_3_2_Core,
+            CGL.kCGLPFAColorSize, 24,
+            CGL.kCGLPFAAlphaSize, 8,
+            CGL.kCGLPFADepthSize, 16,
+            CGL.kCGLPFAAccelerated,
+            0,
+        )
+        val pixFmt = stack.pointers(0L)
+        val nPix   = stack.ints(0)
+        CGL.CGLChoosePixelFormat(attrs, pixFmt, nPix)
+        val pix = pixFmt.get(0)
+        check(pix != 0L) { "CGL: no suitable pixel format" }
+
+        val ctxBuf = stack.pointers(0L)
+        CGL.CGLCreateContext(pix, 0L, ctxBuf)
+        CGL.CGLDestroyPixelFormat(pix)
+        val ctx = ctxBuf.get(0)
+        check(ctx != 0L) { "CGL: context creation failed" }
+        return ctx
+    }
+}
+
+// Used on Linux and Windows only — GLFW does not have the main-thread
+// requirement on those platforms.
 private object GlfwManager {
-    private val initialized = AtomicBoolean(false)
+    private val lock = Object()
+    private var initialized = false
 
     fun ensureInit() {
-        if (initialized.compareAndSet(false, true)) {
-            // Allow GLFW to be initialized from a non-main thread (required for offscreen use)
-            Configuration.GLFW_CHECK_THREAD0.set(false)
-            check(glfwInit()) { "GLFW init failed" }
+        synchronized(lock) {
+            if (!initialized) {
+                Configuration.GLFW_CHECK_THREAD0.set(false)
+                check(glfwInit()) { "GLFW init failed" }
+                initialized = true
+            }
         }
     }
 
@@ -280,4 +332,6 @@ private object GlfwManager {
         check(w != 0L) { "GLFW offscreen window creation failed" }
         return w
     }
+
+    fun destroyWindow(window: Long) = glfwDestroyWindow(window)
 }
