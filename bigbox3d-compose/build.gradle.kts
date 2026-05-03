@@ -22,6 +22,8 @@ kotlin {
         browser()
     }
 
+    jvm()
+
     sourceSets {
         commonMain.dependencies {
             api(project(":bigbox3d-core"))
@@ -41,6 +43,11 @@ kotlin {
             dependencies {
                 implementation(libs.junit)
             }
+        }
+        jvmMain.dependencies {
+            implementation(libs.lwjgl)
+            implementation(libs.lwjgl.opengl)
+            implementation(libs.lwjgl.glfw)
         }
     }
 }

@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 GameBigBox is a Kotlin Multiplatform project that provides a `BigBox3D` Compose widget rendering a 3D textured cuboid (a physical PC game "big box") via OpenGL ES 3.0 on Android and WebGL2 on web. Touch/mouse gestures support rotation and scroll/pinch-to-zoom.
 
 - **Language:** Kotlin 2.0.21 | **minSdk:** 26 | **compileSdk:** 36
-- **Build:** KMP (`kotlin("multiplatform")`) — `androidTarget()` + `wasmJs { browser() }` on library/app modules; `jvm()` on `:bigbox3d-core`
+- **Build:** KMP (`kotlin("multiplatform")`) — `androidTarget()` + `wasmJs { browser() }` on library/app modules; `jvm()` on `:bigbox3d-core` and `:bigbox3d-compose`
 - **UI:** Compose Multiplatform 1.7.1 + Material3; GL surface embedded via `AndroidView` on Android, DOM canvas overlay on web
 - **Rendering:** OpenGL ES 3.0 (`GLSurfaceView`) on Android; WebGL2 (`OffscreenCanvas` / `HTMLCanvasElement`) on web. All rendering goes through the platform-agnostic `GlApi` interface using VBOs.
 - **Image loading:** Coil 3.0.4 on Android (OkHttp network fetcher); browser `fetch` → `createImageBitmap` → `OffscreenCanvas` on web
@@ -33,7 +33,7 @@ src/
 | Module | Type | Purpose |
 |---|---|---|
 | `:bigbox3d-core` | KMP library (Android + wasmJs + JVM) | All 3D logic — GL abstraction, geometry, atlas building, rendering |
-| `:bigbox3d-compose` | KMP Compose library (Android + wasmJs) | `BigBox3D` Compose widget; image loading; platform GL surface |
+| `:bigbox3d-compose` | KMP Compose library (Android + wasmJs + JVM) | `BigBox3D` Compose widget; image loading; platform GL surface |
 | `:opengl3` | Android library (legacy) | Original self-contained Android implementation; still published to JitPack |
 | `:app` | KMP app (Android + wasmJs) | Demo app showing multiple `BigBox3D` widgets with a live `SettingsPanel` |
 
@@ -87,6 +87,7 @@ KMP Compose widget layer. Depends on `:bigbox3d-core` via `api()` (so core types
 | `commonMain` | `BigBox3D` composable (public API); `BoxTextureUrls` sealed interface (`FullBoxTextureUrls` / `EquatorialBoxTextureUrls`); `expect BigBox3DGlSurface`; `expect loadRawImageFromUrl`; `expect val ioDispatcher` |
 | `androidMain` | `actual BigBox3DGlSurface` — `GLSurfaceView` in `AndroidView`, bridges `Renderer` callbacks to `CuboidRenderer`, handles pinch/rotate gestures; `actual loadRawImageFromUrl` — Coil 3 → `BitmapImage` → ARGB→RGBA extraction; `actual ioDispatcher = Dispatchers.IO`; internet permission in manifest |
 | `wasmJsMain` | `actual BigBox3DGlSurface` — creates an HTML `<canvas>` appended to `<body>` as `position:fixed`, sized/positioned via `onGloballyPositioned`, render loop driven by `withFrameNanos`; `actual loadRawImageFromUrl` — browser `fetch` → `createImageBitmap` → `OffscreenCanvas` → `getImageData` pixels; `actual ioDispatcher = Dispatchers.Default` |
+| `jvmMain` | `actual BigBox3DGlSurface` — hidden GLFW window → FBO → `glReadPixels` → Y-flip → `BufferedImage.toComposeImageBitmap()`, displayed via Compose `Image`; render loop via `withFrameNanos`; drag/scroll gestures via `pointerInput`; VAO bound before `onSurfaceCreated`; `actual loadRawImageFromUrl` — `javax.imageio.ImageIO` + `Graphics2D` scaling; `actual ioDispatcher = Dispatchers.IO` |
 
 **Data flow in `BigBox3D`:**
 1. `LaunchedEffect` loads URLs → `List<RawImage>` on `ioDispatcher` (capped at 1024 px)
@@ -106,7 +107,7 @@ KMP Compose widget layer. Depends on `:bigbox3d-core` via `api()` (so core types
 - `Uint8ClampedArray` pixel values (0–255) extracted as `Int` via `js("data.data[i]")` and reinterpreted as signed `Byte` (same bit pattern) for `RawImage`
 - No Coil dependency on web
 
-**`ioDispatcher` expect/actual:** `Dispatchers.IO` does not exist on Kotlin/wasmJs (JS is single-threaded). The `expect val ioDispatcher` resolves to `Dispatchers.IO` on Android and `Dispatchers.Default` on web.
+**`ioDispatcher` expect/actual:** `Dispatchers.IO` does not exist on Kotlin/wasmJs (JS is single-threaded). The `expect val ioDispatcher` resolves to `Dispatchers.IO` on Android and JVM, and `Dispatchers.Default` on web.
 
 ### `:app`
 
@@ -140,9 +141,15 @@ To add desktop or another platform, these files are needed:
 
 ### Desktop/JVM status
 
-Step 1 is complete: `bigbox3d-core` has a `jvm()` target with a LWJGL3-backed `GlApiImpl` (`org.lwjgl:lwjgl` + `org.lwjgl:lwjgl-opengl` 3.3.4). Steps 2–4 (in `:bigbox3d-compose`) are still needed before the widget can be used on desktop.
+All four steps are complete. Both `:bigbox3d-core` and `:bigbox3d-compose` have `jvm()` targets.
 
-**VAO note:** OpenGL core-profile contexts (mandatory on macOS 10.9+) require a Vertex Array Object to be created and bound before any vertex attribute calls. The `GlApi` interface has no VAO methods, so the desktop `BigBox3DGlSurface` implementation must create and bind a single default VAO after context creation (before calling `CuboidRenderer.onSurfaceCreated`).
+**Rendering approach:** The JVM `BigBox3DGlSurface` creates a hidden GLFW window (1×1, `GLFW_VISIBLE = false`) to obtain an OpenGL core-profile context. It renders into an FBO sized to the Compose layout bounds, reads back pixels with `glReadPixels`, flips the Y-axis (OpenGL is bottom-up), converts to a `BufferedImage` → `ImageBitmap`, and displays via a Compose `Image` composable. The render loop is driven by `withFrameNanos`.
+
+**Image loading:** Uses `javax.imageio.ImageIO` over a standard `URI`/`URL` connection — no Coil dependency on JVM.
+
+**GLFW init:** `GlfwManager` (singleton) calls `glfwInit()` exactly once per process, bypassing the macOS main-thread check via `Configuration.GLFW_CHECK_THREAD0.set(false)`. Each widget instance gets its own hidden GLFW window and dedicated single-threaded coroutine dispatcher.
+
+**VAO:** OpenGL core-profile contexts (mandatory on macOS 10.9+) require a VAO bound before any vertex attribute calls. The JVM `BigBox3DGlSurface` creates and binds a default VAO immediately after `GL.createCapabilities()` and before `CuboidRenderer.onSurfaceCreated`.
 
 ## Known Issues / Quirks
 
@@ -152,4 +159,4 @@ Step 1 is complete: `bigbox3d-core` has a `jvm()` target with a LWJGL3-backed `G
 - The web `BigBox3DGlSurface` overlays a `position:fixed` canvas on top of the Compose canvas. If multiple `BigBox3D` widgets are visible simultaneously on web, their WebGL canvases are independent DOM elements stacked at `z-index:1` above the Compose Skia canvas.
 - `BackHandler` (collapse bottom sheet on Android back press) was removed from `MainScreen` when it moved to `commonMain`. It can be re-added via an `expect`/`actual` if needed.
 - Pinch-to-zoom on web touch screens is not yet implemented (single-finger drag works; wheel zoom works for mouse).
-- Desktop/JVM platform consumers must add LWJGL3 native jars (`org.lwjgl:lwjgl:3.3.4:natives-<platform>` and `org.lwjgl:lwjgl-opengl:3.3.4:natives-<platform>`) as `runtimeOnly` dependencies — `:bigbox3d-core` ships only the binding JARs.
+- Desktop/JVM platform consumers must add LWJGL3 native jars as `runtimeOnly` dependencies — the libraries ship only the binding JARs. Required natives: `org.lwjgl:lwjgl:3.3.4:natives-<platform>`, `org.lwjgl:lwjgl-opengl:3.3.4:natives-<platform>`, and `org.lwjgl:lwjgl-glfw:3.3.4:natives-<platform>`.

@@ -49,6 +49,7 @@ gamebigbox = { module = "com.github.jhavatar:gamebigbox", version.ref = "gamebig
 # LWJGL3 (desktop/JVM OpenGL)
 lwjgl = { group = "org.lwjgl", name = "lwjgl", version.ref = "lwjgl" }
 lwjgl-opengl = { group = "org.lwjgl", name = "lwjgl-opengl", version.ref = "lwjgl" }
+lwjgl-glfw = { group = "org.lwjgl", name = "lwjgl-glfw", version.ref = "lwjgl" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
