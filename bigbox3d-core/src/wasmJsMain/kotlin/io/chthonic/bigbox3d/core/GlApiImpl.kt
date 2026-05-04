@@ -1,9 +1,9 @@
+@file:OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
+
 package io.chthonic.bigbox3d.core
 
-import org.khronos.webgl.Float32Array
-import org.khronos.webgl.Int16Array
-import org.khronos.webgl.Uint8Array
-import org.khronos.webgl.set
+// org.khronos.webgl typed-array types were removed from the wasmJs stdlib in Kotlin 2.1+.
+// We create JS typed arrays via js() intrinsics instead (see helpers at the bottom of this file).
 
 /**
  * Minimal external interface for the methods we call on a WebGL2RenderingContext.
@@ -143,9 +143,7 @@ class GlApiImpl(private val gl: WebGl2Ctx) : GlApi {
         gl.texParameteri(target, pname, param)
 
     override fun glTexImage2D(width: Int, height: Int, pixels: ByteArray) {
-        val data = Uint8Array(pixels.size)
-        for (i in pixels.indices) data[i] = pixels[i]
-        gl.texImage2D(GlApi.GL_TEXTURE_2D, 0, GlApi.GL_RGBA, width, height, 0, GlApi.GL_RGBA, GlApi.GL_UNSIGNED_BYTE, data)
+        gl.texImage2D(GlApi.GL_TEXTURE_2D, 0, GlApi.GL_RGBA, width, height, 0, GlApi.GL_RGBA, GlApi.GL_UNSIGNED_BYTE, pixels.toJsUint8Array())
     }
 
     override fun glDeleteTextures(textures: IntArray) {
@@ -161,9 +159,7 @@ class GlApiImpl(private val gl: WebGl2Ctx) : GlApi {
 
     override fun glUniformMatrix4fv(location: Int, count: Int, transpose: Boolean, value: FloatArray, offset: Int) {
         val loc = handles[location] ?: return
-        val data = Float32Array(count * 16)
-        for (i in 0 until count * 16) data[i] = value[offset + i]
-        gl.uniformMatrix4fv(loc, transpose, data)
+        gl.uniformMatrix4fv(loc, transpose, value.toJsFloat32Array(offset, count * 16))
     }
 
     override fun glUniform3f(location: Int, x: Float, y: Float, z: Float) =
@@ -184,15 +180,11 @@ class GlApiImpl(private val gl: WebGl2Ctx) : GlApi {
         gl.bindBuffer(target, if (buffer == 0) null else handles[buffer])
 
     override fun glBufferData(target: Int, data: FloatArray, usage: Int) {
-        val typed = Float32Array(data.size)
-        for (i in data.indices) typed[i] = data[i]
-        gl.bufferData(target, typed, usage)
+        gl.bufferData(target, data.toJsFloat32Array(0, data.size), usage)
     }
 
     override fun glBufferData(target: Int, data: ShortArray, usage: Int) {
-        val typed = Int16Array(data.size)
-        for (i in data.indices) typed[i] = data[i]
-        gl.bufferData(target, typed, usage)
+        gl.bufferData(target, data.toJsInt16Array(), usage)
     }
 
     override fun glDeleteBuffers(buffers: IntArray) {
@@ -232,4 +224,36 @@ class GlApiImpl(private val gl: WebGl2Ctx) : GlApi {
     // --- info ---
 
     override fun glGetString(name: Int): String = gl.getParameter(name)?.toString() ?: ""
+    override fun isGlEs() = true
+}
+
+// ── Typed-array helpers ───────────────────────────────────────────────────────
+// org.khronos.webgl was removed from the wasmJs stdlib in Kotlin 2.1+.
+// In Kotlin/Wasm, js() must be the sole expression of a top-level function —
+// it cannot appear in loops or multi-statement bodies.  Each JS operation
+// therefore has its own single-expression helper; the iteration helpers above
+// call these without invoking js() directly.
+
+private fun jsUint8Array(n: Int): JsAny = js("new Uint8Array(n)")
+private fun jsFloat32Array(n: Int): JsAny = js("new Float32Array(n)")
+private fun jsInt16Array(n: Int): JsAny = js("new Int16Array(n)")
+private fun jsSet(arr: JsAny, i: Int, v: Int): Unit = js("arr[i] = v")
+private fun jsSet(arr: JsAny, i: Int, v: Float): Unit = js("arr[i] = v")
+
+private fun ByteArray.toJsUint8Array(): JsAny {
+    val arr = jsUint8Array(size)
+    for (i in indices) jsSet(arr, i, this[i].toInt())
+    return arr
+}
+
+private fun FloatArray.toJsFloat32Array(offset: Int, n: Int): JsAny {
+    val arr = jsFloat32Array(n)
+    for (i in 0 until n) jsSet(arr, i, this[offset + i])
+    return arr
+}
+
+private fun ShortArray.toJsInt16Array(): JsAny {
+    val arr = jsInt16Array(size)
+    for (i in indices) jsSet(arr, i, this[i].toInt())
+    return arr
 }

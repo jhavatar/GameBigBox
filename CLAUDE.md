@@ -6,11 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 GameBigBox is a Kotlin Multiplatform project that provides a `BigBox3D` Compose widget rendering a 3D textured cuboid (a physical PC game "big box") via OpenGL ES 3.0 on Android and WebGL2 on web. Touch/mouse gestures support rotation and scroll/pinch-to-zoom.
 
-- **Language:** Kotlin 2.0.21 | **minSdk:** 26 | **compileSdk:** 36
+- **Language:** Kotlin 2.3.21 | **minSdk:** 26 | **compileSdk:** 36
 - **Build:** KMP (`kotlin("multiplatform")`) — `androidTarget()` + `wasmJs { browser() }` on library/app modules; `jvm()` on `:bigbox3d-core`, `:bigbox3d-compose`, and `:app`
-- **UI:** Compose Multiplatform 1.7.1 + Material3; GL surface embedded via `AndroidView` on Android, DOM canvas overlay on web
-- **Rendering:** OpenGL ES 3.0 (`GLSurfaceView`) on Android; WebGL2 (`OffscreenCanvas` / `HTMLCanvasElement`) on web. All rendering goes through the platform-agnostic `GlApi` interface using VBOs.
-- **Image loading:** Coil 3.0.4 on Android (OkHttp network fetcher); browser `fetch` → `createImageBitmap` → `OffscreenCanvas` on web
+- **UI:** Compose Multiplatform 1.10.3 + Material3; GL surface embedded via `AndroidView` on Android, WebGL canvas overlay on web
+- **Rendering:** OpenGL ES 3.0 (`GLSurfaceView`) on Android; WebGL2 on web. All rendering goes through the platform-agnostic `GlApi` interface using VBOs.
+- **Image loading:** Coil 3.4.0 on Android (OkHttp network fetcher); Skiko `Image.makeFromEncoded` on JVM (handles WebP); browser `fetch` → `createImageBitmap` → `OffscreenCanvas` on web
 
 ## Source Layout
 
@@ -73,7 +73,7 @@ Pure KMP — zero platform imports in `commonMain`.
 
 | Source set | Contents |
 |---|---|
-| `commonMain` | `GlApi` interface + GL constants; `RawImage` (RGBA `ByteArray`); `CuboidDimensions`; `AtlasBuilder` (pure-Kotlin nearest-neighbour scale + blit); `Matrix4` (pure-Kotlin port of `android.opengl.Matrix`); `Cuboid` (VBO-based GL rendering via `GlApi`); `CuboidRenderer` (rotation/zoom state, drives `Cuboid`); visual config enums |
+| `commonMain` | `GlApi` interface + GL constants (including `isGlEs(): Boolean` for per-platform GLSL preamble selection); `RawImage` (RGBA `ByteArray`); `CuboidDimensions`; `AtlasBuilder` (pure-Kotlin nearest-neighbour scale + blit); `Matrix4` (pure-Kotlin port of `android.opengl.Matrix`); `Cuboid` (VBO-based GL rendering via `GlApi`); `CuboidRenderer` (rotation/zoom state, drives `Cuboid`); visual config enums |
 | `androidMain` | `GlApiImpl` — thin delegation of every `GlApi` call to `GLES30.*` |
 | `wasmJsMain` | `WebGl2Ctx` external interface (WebGL2 method declarations); `GlApiImpl(gl: WebGl2Ctx)` — maps OpenGL integer handles to WebGL JS objects via internal maps |
 | `jvmMain` | `GlApiImpl` — delegates to LWJGL3 (`org.lwjgl.opengl.GL11`/`GL15`/`GL20`); uses `MemoryStack` for zero-GC buffer allocation on VBO uploads and uniform calls |
@@ -94,8 +94,8 @@ KMP Compose widget layer. Depends on `:bigbox3d-core` via `api()` (so core types
 | Source set | Contents |
 |---|---|
 | `commonMain` | `BigBox3D` composable (public API); `BoxTextureUrls` sealed interface (`FullBoxTextureUrls` / `EquatorialBoxTextureUrls`); `expect BigBox3DGlSurface`; `expect loadRawImageFromUrl`; `expect val ioDispatcher` |
-| `androidMain` | `actual BigBox3DGlSurface` — `GLSurfaceView` in `AndroidView`, bridges `Renderer` callbacks to `CuboidRenderer`, handles pinch/rotate gestures; `actual loadRawImageFromUrl` — Coil 3 → `BitmapImage` → ARGB→RGBA extraction; `actual ioDispatcher = Dispatchers.IO`; internet permission in manifest |
-| `wasmJsMain` | `actual BigBox3DGlSurface` — creates an HTML `<canvas>` appended to `<body>` as `position:fixed`, sized/positioned via `onGloballyPositioned`, render loop driven by `withFrameNanos`; `actual loadRawImageFromUrl` — browser `fetch` → `createImageBitmap` → `OffscreenCanvas` → `getImageData` pixels; `actual ioDispatcher = Dispatchers.Default` |
+| `androidMain` | `actual BigBox3DGlSurface` — `GLSurfaceView` in `AndroidView`, bridges `Renderer` callbacks to `CuboidRenderer`; gestures handled via `Modifier.pointerInput` (horizontal drag = rotate, vertical passes to `LazyColumn` for scroll, pinch = zoom); `actual loadRawImageFromUrl` — Coil 3 → `BitmapImage` → ARGB→RGBA extraction; `actual ioDispatcher = Dispatchers.IO`; internet permission in manifest |
+| `wasmJsMain` | `actual BigBox3DGlSurface` — creates a WebGL `<canvas>` appended to `<html>` (not `<body>`) with `position:fixed; pointer-events:none; z-index:1`; gestures handled via `Modifier.pointerInput` on the Box (drag = rotate; scroll = LazyColumn; scroll over stationary box = zoom via 300 ms debounce); `onSurfaceCreated` called after first `jsResizeCanvas` due to WebGL context-reset behaviour; `localToWindow(Offset.Zero)` + `coords.size` gives full composable dimensions during scroll; `actual loadRawImageFromUrl` — browser `fetch` → `createImageBitmap` → `OffscreenCanvas` → `getImageData` pixels; `actual ioDispatcher = Dispatchers.Default` |
 | `jvmMain` | `actual BigBox3DGlSurface` — CGL headless context (macOS) or GLFW hidden window (Linux/Windows) → FBO → `glReadPixels` → Y-flip → `BufferedImage.toComposeImageBitmap()`, displayed via Compose `Image`; render loop via `withFrameNanos`; drag/scroll gestures via `pointerInput`; VAO bound before `onSurfaceCreated`; `actual loadRawImageFromUrl` — Skiko `Image.makeFromEncoded` (handles WebP) → `Surface` → pixel readback; `actual ioDispatcher = Dispatchers.IO` |
 
 **Data flow in `BigBox3D`:**
@@ -104,11 +104,12 @@ KMP Compose widget layer. Depends on `:bigbox3d-core` via `api()` (so core types
 3. Passes atlas to `BigBox3DGlSurface` (expect/actual); shows `CircularProgressIndicator` while loading
 
 **Web GL surface (`BigBox3DGlSurface.wasmJs.kt`):**
-- An HTML `<canvas>` is created and appended to `<body>` as `position: fixed; z-index: 1`
-- `onGloballyPositioned` syncs its CSS `left/top/width/height` to the Compose layout position and sets canvas `width`/`height` = CSS size × `devicePixelRatio` for HiDPI rendering
-- Mouse (drag/wheel) and single-touch events are wired via `canvas.onmousedown` etc. (property assignment rather than `addEventListener`, so cleanup is a null-assign)
-- The render loop runs inside a `LaunchedEffect` using `withFrameNanos { }` which backs onto `requestAnimationFrame`
-- All `js("...")` calls use the Kotlin/Wasm `js()` intrinsic; Kotlin function parameters are directly accessible inside the JS string
+- A WebGL2 `<canvas>` is appended to `<html>` (not `<body>`) with `position:fixed; pointer-events:none; z-index:1`. It must go to `<html>` because Compose MP 1.10.x sets `position:relative; overflow:hidden` on `<body>`, which causes a Firefox bug where `position:fixed` children have `offsetWidth=0` and are invisible.
+- `pointer-events:none` on the canvas lets all pointer events pass through to Compose, so the `LazyColumn` can scroll freely and `Modifier.pointerInput` on the placeholder `Box` handles gestures.
+- Positioning uses `coords.localToWindow(Offset.Zero)` (true origin, can be negative when scrolled off-screen) and `coords.size` (full composable dimensions, not clipped by viewport). This keeps the canvas full-size as it scrolls partially off-screen.
+- `onSurfaceCreated` is called inside `onGloballyPositioned` — AFTER `jsResizeCanvas` — because `canvas.width/height` changes reset the WebGL context (wiping all GL state). In Compose MP 1.10.x, `DisposableEffect` runs before `onGloballyPositioned`, so initialising GL in `DisposableEffect` and then resizing would lose all GL resources.
+- The render loop is a `LaunchedEffect` using `withFrameNanos { }` (backs onto `requestAnimationFrame`). It only draws when `glReady` is true (after the first resize + `onSurfaceCreated`).
+- Scroll-wheel zoom uses a 300 ms debounce: if scroll events arrive faster than 300 ms apart the box is deemed "in list-scroll motion" and zoom is suppressed; once quiescent, the next wheel tick zooms.
 
 **Web image loading (`ImageLoading.wasmJs.kt`):**
 - Entirely browser-native: `fetch` → `.blob()` → `createImageBitmap` → `OffscreenCanvas` → `getImageData`
@@ -125,7 +126,7 @@ KMP Compose widget layer. Depends on `:bigbox3d-core` via `api()` (so core types
 | `commonMain` | `MainScreen`, `SettingsPanel`, and all UI composables — shared between Android, web, and desktop |
 | `androidMain` | `MainActivity` (`ComponentActivity` entry point, wraps `MainScreen` in `GameBigBoxTheme`); `@Preview` composable; `GameBigBoxTheme` with Android dynamic colors |
 | `wasmJsMain` | `main()` — web entry point using `ComposeViewport(document.body!!)` wrapped in `MaterialTheme` |
-| `wasmJsMain/resources` | `index.html` — loads `skiko.js` and `app.js` |
+| `wasmJsMain/resources` | `index.html` — loads `app.js` (Skiko is bundled into `app.js` by webpack in Compose MP 1.10.x; the old separate `skiko.js` tag was removed) |
 | `jvmMain` | `main()` — desktop entry point using `singleWindowApplication` (520×900 dp) wrapped in `MaterialTheme`; LWJGL native jars for all platforms added as `runtimeOnly`; `compose.desktop.currentOs` provides the Compose Desktop runtime |
 
 ### `:opengl3` (legacy)
@@ -161,7 +162,7 @@ All four steps are complete. `:bigbox3d-core`, `:bigbox3d-compose`, and `:app` a
 
 **Image loading:** Uses Skiko's `Image.makeFromEncoded(bytes)` to decode downloaded bytes — this handles WebP natively via Skia's bundled libwebp, which `javax.imageio.ImageIO` (no WebP support) cannot. Decoded pixels are extracted via `Surface.readPixels` into RGBA `ByteArray` for `RawImage`.
 
-**GLSL shaders:** `Cuboid.kt` calls `gl.glGetString(GlApi.GL_VERSION)` at `onSurfaceCreated` to detect ES vs desktop. ES/WebGL contexts get `#version 300 es` + `precision mediump float;`; desktop gets `#version 330 core` (no precision qualifier). This is the only GLSL difference — the rest of the shader source is identical.
+**GLSL shaders:** `Cuboid.kt` calls `gl.isGlEs()` at `onSurfaceCreated` to select the shader preamble. `isGlEs()` is a method on the `GlApi` interface, implemented as `true` on Android and wasmJs, `false` on JVM. ES/WebGL contexts get `#version 300 es` + `precision mediump float;`; desktop gets `#version 330 core` (no precision qualifier). This is the only GLSL difference — the rest of the shader source is identical.
 
 **VAO:** OpenGL core-profile contexts (mandatory on macOS 10.9+) require a VAO bound before any vertex attribute calls. The JVM `BigBox3DGlSurface` creates and binds a default VAO immediately after `GL.createCapabilities()` and before `CuboidRenderer.onSurfaceCreated`.
 
@@ -170,8 +171,9 @@ All four steps are complete. `:bigbox3d-core`, `:bigbox3d-compose`, and `:app` a
 - `expect @Composable fun BigBox3DGlSurface` triggers an IDE warning ("has no corresponding expected declaration") — this is a false positive caused by the Compose compiler transforming `@Composable` signatures at the IR level. The build succeeds.
 - Internal class `EquitorialBoxTextureBitmaps` in `:opengl3` contains a typo ("Equitorial") — the public `EquatorialBoxTextureUrls` is spelled correctly.
 - The Kotlin/Wasm stdlib's `WebGL2RenderingContext` binding is incomplete (many methods missing). The `WebGl2Ctx` custom `external interface` in `bigbox3d-core:wasmJsMain` works around this.
-- The web `BigBox3DGlSurface` overlays a `position:fixed` canvas on top of the Compose canvas. If multiple `BigBox3D` widgets are visible simultaneously on web, their WebGL canvases are independent DOM elements stacked at `z-index:1` above the Compose Skia canvas.
+- The web `BigBox3DGlSurface` overlays a `position:fixed; pointer-events:none` canvas on `<html>`. Multiple `BigBox3D` widgets produce independent canvases at `z-index:1`. Because `pointer-events:none`, all gestures are routed through Compose's pointer system on the Box placeholder beneath.
+- Android gesture handling uses `Modifier.pointerInput` on the `AndroidView` (not a native `OnTouchListener`). Horizontal-dominant drags rotate the box; vertical-dominant drags are released to the `LazyColumn` for scroll; pinch zooms. The old `requestDisallowInterceptTouchEvent` approach broke in Compose MP 1.10.x because Compose's pointer-input scroll system no longer honours it from a native child view.
 - `BackHandler` (collapse bottom sheet on Android back press) was removed from `MainScreen` when it moved to `commonMain`. It can be re-added via an `expect`/`actual` if needed.
-- Pinch-to-zoom on web touch screens is not yet implemented (single-finger drag works; wheel zoom works for mouse).
+- Pinch-to-zoom on web touch screens is not yet implemented. Mouse-wheel zoom works when the list is stationary (suppressed during list scroll via a 300 ms debounce).
 - Desktop/JVM platform consumers must add LWJGL3 native jars as `runtimeOnly` dependencies — the libraries ship only the binding JARs. Required natives: `org.lwjgl:lwjgl:3.3.4:natives-<platform>`, `org.lwjgl:lwjgl-opengl:3.3.4:natives-<platform>`, and `org.lwjgl:lwjgl-glfw:3.3.4:natives-<platform>` (GLFW natives are only needed on Linux/Windows; macOS uses CGL).
 - On macOS, `glfwInit()` crashes with `SIGILL` in `libdispatch.dylib` (`_dispatch_assert_queue_fail`) when called from any non-main thread, including the AWT EDT, because GLFW's macOS path calls HIToolbox's Text Services Manager which asserts the GCD main queue. The JVM implementation bypasses this entirely by using CGL on macOS.

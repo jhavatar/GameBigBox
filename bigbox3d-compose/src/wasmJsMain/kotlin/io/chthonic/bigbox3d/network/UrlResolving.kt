@@ -1,31 +1,17 @@
+@file:OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
+
 package io.chthonic.bigbox3d.network
 
+// External declarations for window/Location/URL caused a compiler crash in
+// Kotlin 2.2.x (ExperimentalWasmJsInterop).  Using js() intrinsics avoids
+// external declarations entirely while keeping identical runtime behaviour.
 
-external object window {
-    val location: Location
-}
+private fun jsHostname(): String = js("window.location.hostname")
+private fun jsUrlPathname(url: String): String = js("new URL(url).pathname")
+private fun jsEncodeURIComponent(url: String): String = js("encodeURIComponent(url)")
 
-external class Location {
-    val hostname: String
-}
+private fun isDev(): Boolean = jsHostname() == "localhost"
 
-external class URL {
-    constructor(url: String)
-
-    val pathname: String
-}
-
-@JsFun("encodeURIComponent")
-external fun encodeURIComponent(value: String): String
-
-private fun isDev(): Boolean =
-    window.location.hostname == "localhost"
-
-internal fun resolveExternalUrl(url: String): String {
-    val pathname = URL(url).pathname
-    return if (isDev()) {
-        pathname
-    } else {
-        "/api/proxy?url=" + encodeURIComponent(url)
-    }
-}
+internal fun resolveExternalUrl(url: String): String =
+    if (isDev()) jsUrlPathname(url)
+    else "/api/proxy?url=" + jsEncodeURIComponent(url)

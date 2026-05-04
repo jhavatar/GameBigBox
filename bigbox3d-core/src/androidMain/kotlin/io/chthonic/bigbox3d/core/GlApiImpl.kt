@@ -87,4 +87,5 @@ class GlApiImpl : GlApi {
     override fun glClear(mask: Int) = GLES30.glClear(mask)
 
     override fun glGetString(name: Int): String = GLES30.glGetString(name) ?: ""
+    override fun isGlEs() = true
 }

@@ -94,13 +94,9 @@ internal class Cuboid(
         gl.glBindBuffer(GL_ARRAY_BUFFER, vboIds[4])
         gl.glBufferData(GL_ARRAY_BUFFER, floatArrayOf(-1f,-1f, 1f,-1f, -1f,1f, 1f,1f), GL_STATIC_DRAW)
 
-        // Desktop OpenGL uses GLSL 330 core; OpenGL ES / WebGL uses GLSL 300 es.
-        // "ES" appears in Android ("OpenGL ES 3.x") and WebGL ("WebGL 2.0 …ES…") version strings.
-        val isEs = gl.glGetString(GlApi.GL_VERSION).let {
-            it.contains("OpenGL ES", ignoreCase = true) || it.startsWith("WebGL", ignoreCase = true)
-        }
-        val ver       = if (isEs) "#version 300 es"                        else "#version 330 core"
-        val verPrec   = if (isEs) "#version 300 es\nprecision mediump float;" else "#version 330 core"
+        // Desktop OpenGL (JVM) uses GLSL 330 core; OpenGL ES (Android) and WebGL use GLSL 300 es.
+        val ver     = if (gl.isGlEs()) "#version 300 es"                          else "#version 330 core"
+        val verPrec = if (gl.isGlEs()) "#version 300 es\nprecision mediump float;" else "#version 330 core"
 
         val vShader = """
             $ver

@@ -67,6 +67,8 @@ interface GlApi {
 
     // --- info ---
     fun glGetString(name: Int): String
+    /** True for OpenGL ES (Android) and WebGL (web); false for desktop OpenGL (JVM). */
+    fun isGlEs(): Boolean
 
     companion object {
         // Texture

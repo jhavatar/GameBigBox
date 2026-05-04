@@ -1,3 +1,5 @@
+@file:OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
+
 package io.chthonic.bigbox3d.compose
 
 import coil3.PlatformContext

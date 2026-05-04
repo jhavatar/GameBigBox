@@ -103,4 +103,5 @@ class GlApiImpl : GlApi {
 
     // --- info ---
     override fun glGetString(name: Int): String = GL11.glGetString(name) ?: ""
+    override fun isGlEs() = false
 }

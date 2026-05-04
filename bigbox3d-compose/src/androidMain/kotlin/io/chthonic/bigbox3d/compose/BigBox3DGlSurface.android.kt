@@ -1,12 +1,18 @@
 package io.chthonic.bigbox3d.compose
 
-import android.annotation.SuppressLint
 import android.opengl.GLSurfaceView
-import android.view.MotionEvent
 import android.view.ScaleGestureDetector
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroidSize
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.viewinterop.AndroidView
 import io.chthonic.bigbox3d.core.BoxTextureAtlas
 import io.chthonic.bigbox3d.core.CuboidRenderer
@@ -16,8 +22,9 @@ import io.chthonic.bigbox3d.core.ShadowFade
 import io.chthonic.bigbox3d.core.ShadowOpacity
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
+import kotlin.math.abs
+import kotlin.math.hypot
 
-@SuppressLint("ClickableViewAccessibility")
 @Composable
 internal actual fun BigBox3DGlSurface(
     atlas: BoxTextureAtlas,
@@ -32,6 +39,7 @@ internal actual fun BigBox3DGlSurface(
 ) {
     val glApi = remember { GlApiImpl() }
     val renderer = remember(atlas) { CuboidRenderer(atlas) }
+    val glViewRef = remember { mutableStateOf<GLSurfaceView?>(null) }
 
     AndroidView(
         factory = { ctx ->
@@ -49,85 +57,93 @@ internal actual fun BigBox3DGlSurface(
                         renderer.onDrawFrame(glApi)
                 })
                 renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
-                setupTouchHandling(renderer, onGestureActive)
-            }
+                // No touch handling here — gestures are handled at the Compose level
+                // via Modifier.pointerInput below so that the LazyColumn can intercept
+                // vertical scroll gestures before the box claims them.
+            }.also { glViewRef.value = it }
         },
         update = { glView ->
             glView.queueEvent {
-                renderer.glossLevel = glossLevel
-                renderer.autoRotate = autoRotate
-                renderer.shadowOpacity = shadowOpacity
-                renderer.shadowFade = shadowFade
+                renderer.glossLevel        = glossLevel
+                renderer.autoRotate        = autoRotate
+                renderer.shadowOpacity     = shadowOpacity
+                renderer.shadowFade        = shadowFade
                 renderer.shadowXOffsetRatio = shadowXOffsetRatio
                 renderer.shadowYOffsetRatio = shadowYOffsetRatio
             }
         },
-        modifier = modifier,
+        modifier = modifier.pointerInput(Unit) {
+            val touchSlop = viewConfiguration.touchSlop
+            var scaleFactor = 1f
+
+            awaitEachGesture {
+                // ── Wait for the first finger down ─────────────────────────────
+                val down = awaitFirstDown(requireUnconsumed = false)
+                var prevX = down.position.x
+                var prevY = down.position.y
+                var claimedRotation = false
+
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val anyPressed = event.changes.any { it.pressed }
+                    if (!anyPressed) {
+                        if (claimedRotation) onGestureActive(false)
+                        break
+                    }
+
+                    // ── Pinch-to-zoom (two or more fingers) ───────────────────
+                    if (event.changes.size >= 2) {
+                        if (!claimedRotation) {
+                            claimedRotation = true
+                            onGestureActive(true)
+                        }
+                        val zoom = event.calculateZoom()
+                        if (zoom != 1f) {
+                            scaleFactor = (scaleFactor * zoom).coerceIn(0.5f, 3f)
+                            val sf = scaleFactor
+                            glViewRef.value?.queueEvent { renderer.zoomFactor = sf }
+                        }
+                        event.changes.forEach { it.consume() }
+                        // Update prevX/prevY to the centroid so single-touch
+                        // resumption doesn't produce a position jump.
+                        val centroid = event.calculateCentroidSize()
+                        prevX = event.changes.map { it.position.x }.average().toFloat()
+                        prevY = event.changes.map { it.position.y }.average().toFloat()
+                        continue
+                    }
+
+                    // ── Single-finger drag ─────────────────────────────────────
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    val dx = change.position.x - prevX
+                    val dy = change.position.y - prevY
+
+                    if (!claimedRotation) {
+                        val dist = hypot(dx, dy)
+                        if (dist > touchSlop) {
+                            if (abs(dx) >= abs(dy)) {
+                                // Horizontal-dominant → claim for rotation.
+                                claimedRotation = true
+                                onGestureActive(true)
+                            } else {
+                                // Vertical-dominant → release so LazyColumn can scroll.
+                                break
+                            }
+                        }
+                    }
+
+                    if (claimedRotation) {
+                        change.consume()
+                        val fdx = dx; val fdy = dy
+                        glViewRef.value?.queueEvent { renderer.handleTouchDrag(fdx, fdy) }
+                        prevX = change.position.x
+                        prevY = change.position.y
+                    }
+                }
+            }
+        },
         onRelease = { glView ->
             glView.queueEvent { renderer.release(glApi) }
             glView.onPause()
         },
     )
-}
-
-@SuppressLint("ClickableViewAccessibility")
-private fun GLSurfaceView.setupTouchHandling(
-    renderer: CuboidRenderer,
-    onGestureActive: (Boolean) -> Unit,
-) {
-    var previousX = 0f
-    var previousY = 0f
-    var expectRotating = false
-    var isRotating = false
-    var isScaling = false
-    var scaleFactor = 1f
-
-    val isGestureActive = { isScaling || isRotating }
-    val notifyGesture = { onGestureActive(isGestureActive()) }
-    val updateDisallow = { parent.requestDisallowInterceptTouchEvent(isGestureActive()) }
-
-    val scaleDetector = ScaleGestureDetector(
-        context,
-        object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
-                isScaling = true; updateDisallow(); notifyGesture(); return true
-            }
-            override fun onScale(detector: ScaleGestureDetector): Boolean {
-                scaleFactor = (scaleFactor * detector.scaleFactor).coerceIn(0.5f, 3f)
-                queueEvent { renderer.zoomFactor = scaleFactor }
-                return true
-            }
-            override fun onScaleEnd(detector: ScaleGestureDetector) {
-                isScaling = false; updateDisallow(); notifyGesture()
-            }
-        },
-    )
-
-    setOnTouchListener { _, event ->
-        scaleDetector.onTouchEvent(event)
-        if (!isScaling) {
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    expectRotating = true
-                    previousX = event.x; previousY = event.y
-                }
-                MotionEvent.ACTION_MOVE -> if (expectRotating) {
-                    isRotating = true
-                    val dx = event.x - previousX
-                    val dy = event.y - previousY
-                    previousX = event.x; previousY = event.y
-                    queueEvent { renderer.handleTouchDrag(dx, dy) }
-                    updateDisallow(); notifyGesture()
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    isRotating = false; expectRotating = false
-                    updateDisallow(); notifyGesture()
-                }
-            }
-        } else {
-            isRotating = false; expectRotating = false
-            updateDisallow(); notifyGesture()
-        }
-        true
-    }
 }

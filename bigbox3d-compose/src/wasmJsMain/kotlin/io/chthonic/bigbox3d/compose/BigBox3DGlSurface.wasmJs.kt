@@ -1,14 +1,22 @@
+@file:OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
+
 package io.chthonic.bigbox3d.compose
 
+import androidx.compose.foundation.gestures.detectDragGestures
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import io.chthonic.bigbox3d.core.BoxTextureAtlas
 import io.chthonic.bigbox3d.core.CuboidRenderer
@@ -35,7 +43,6 @@ internal actual fun BigBox3DGlSurface(
     val glApi    = remember { GlApiImpl(glCtx) }
     val renderer = remember(atlas) { CuboidRenderer(atlas) }
 
-    // Sync renderer settings on every recomposition (mirrors the AndroidView update block).
     renderer.autoRotate         = autoRotate
     renderer.glossLevel         = glossLevel
     renderer.shadowOpacity      = shadowOpacity
@@ -43,103 +50,104 @@ internal actual fun BigBox3DGlSurface(
     renderer.shadowXOffsetRatio = shadowXOffsetRatio
     renderer.shadowYOffsetRatio = shadowYOffsetRatio
 
-    // Add the WebGL canvas to the DOM; create the GL surface; tear down on exit.
+    // In Compose MP 1.10.x, DisposableEffect runs BEFORE the first onGloballyPositioned.
+    // Setting canvas.width/height (jsResizeCanvas) resets the WebGL context, wiping all
+    // GL state created by onSurfaceCreated. So onSurfaceCreated is called inside
+    // onGloballyPositioned, after the first backing-buffer resize.
+    //
+    // The canvas is attached to <html> (not <body>) because Compose MP 1.10.x sets
+    // position:relative; overflow:hidden on <body>, which causes a Firefox layout
+    // bug where position:fixed children have offsetWidth=0 and are invisible.
+    //
+    // The canvas uses pointer-events:none so all pointer events pass through to Compose.
+    // Gestures are handled by Modifier.pointerInput on the Box below, which lets the
+    // LazyColumn scroll freely and lets detectDragGestures claim the drag for rotation.
+    val glReady   = remember { mutableStateOf(false) }
+    val lastPw    = remember { mutableStateOf(0) }
+    val lastPh    = remember { mutableStateOf(0) }
+    val zoomScope = rememberCoroutineScope()
+
     DisposableEffect(glCanvas) {
-        jsAppendToBody(glCanvas)
-        renderer.onSurfaceCreated(glApi)
+        jsAppendToHtml(glCanvas)
         onDispose {
-            renderer.release(glApi)
+            if (glReady.value) renderer.release(glApi)
+            glReady.value = false
             jsRemoveFromParent(glCanvas)
         }
     }
 
-    // Gesture state stored as MutableState so the lambdas below, created once,
-    // always read/write live values without needing to be recreated.
-    val dragging    = remember { mutableStateOf(false) }
-    val prevX       = remember { mutableStateOf(0.0) }
-    val prevY       = remember { mutableStateOf(0.0) }
-    val scaleFactor = remember { mutableStateOf(1f) }
-
-    // Register pointer events directly on the canvas element using the onXxx
-    // property (not addEventListener) so cleanup is a simple null-assign with
-    // no need for a stable function-reference identity.
-    DisposableEffect(glCanvas) {
-        // Mouse
-        jsSetMouseDown(glCanvas) { e ->
-            if (e != null) {
-                dragging.value = true
-                prevX.value    = jsClientX(e)
-                prevY.value    = jsClientY(e)
-                onGestureActive(true)
-            }
-        }
-        jsSetMouseMove(glCanvas) { e ->
-            if (e != null && dragging.value) {
-                val x = jsClientX(e); val y = jsClientY(e)
-                renderer.handleTouchDrag((x - prevX.value).toFloat(), (y - prevY.value).toFloat())
-                prevX.value = x; prevY.value = y
-            }
-        }
-        jsSetMouseUpAndLeave(glCanvas) { _ ->
-            if (dragging.value) { dragging.value = false; onGestureActive(false) }
-        }
-        jsSetWheel(glCanvas) { e ->
-            if (e != null) {
-                jsPreventDefault(e)
-                scaleFactor.value = (scaleFactor.value * if (jsDeltaY(e) > 0) 0.9f else 1.1f)
-                    .coerceIn(0.5f, 3f)
-                renderer.zoomFactor = scaleFactor.value
-            }
-        }
-        // Touch (single-finger drag; pinch-to-zoom not yet implemented)
-        jsSetTouchStart(glCanvas) { e ->
-            if (e != null) {
-                dragging.value = true
-                prevX.value    = jsTouchClientX(e, 0)
-                prevY.value    = jsTouchClientY(e, 0)
-                onGestureActive(true)
-            }
-        }
-        jsSetTouchMove(glCanvas) { e ->
-            if (e != null && dragging.value) {
-                jsPreventDefault(e)
-                val x = jsTouchClientX(e, 0); val y = jsTouchClientY(e, 0)
-                renderer.handleTouchDrag((x - prevX.value).toFloat(), (y - prevY.value).toFloat())
-                prevX.value = x; prevY.value = y
-            }
-        }
-        jsSetTouchEnd(glCanvas) { _ ->
-            if (dragging.value) { dragging.value = false; onGestureActive(false) }
-        }
-        onDispose { jsClearPointerEvents(glCanvas) }
-    }
-
-    // Render loop driven by Compose's frame clock (backs onto requestAnimationFrame).
     LaunchedEffect(renderer) {
         while (true) {
             withFrameNanos { }
-            renderer.onDrawFrame(glApi)
+            if (glReady.value) renderer.onDrawFrame(glApi)
         }
     }
 
-    // Invisible Compose placeholder. onGloballyPositioned fires whenever the
-    // layout changes so the WebGL canvas is kept in sync with the composable's
-    // position and size on the page.
     Box(
-        modifier = modifier.onGloballyPositioned { coords ->
-            val b = coords.boundsInWindow()
-            val x = b.left.toInt(); val y = b.top.toInt()
-            val w = b.width.toInt(); val h = b.height.toInt()
-            if (w > 0 && h > 0) {
-                // CSS size governs where it appears on the page.
-                jsStyleCanvas(glCanvas, x, y, w, h)
-                // Backing-buffer size uses physical pixels for crisp HiDPI rendering.
-                val dpr = jsDevicePixelRatio()
-                val pw = (w * dpr).toInt(); val ph = (h * dpr).toInt()
-                jsResizeCanvas(glCanvas, pw, ph)
-                renderer.onSurfaceChanged(glApi, pw, ph)
+        modifier = modifier
+            .onGloballyPositioned { coords ->
+                // Use the composable's full size (not the clipped visible area from
+                // boundsInWindow) so the canvas stays 400dp tall while scrolling.
+                // localToWindow gives the true window position even when off-screen (negative y).
+                val windowPos = coords.localToWindow(Offset.Zero)
+                val x = windowPos.x.toInt()
+                val y = windowPos.y.toInt()
+                val w = coords.size.width
+                val h = coords.size.height
+                if (w > 0 && h > 0) {
+                    jsStyleCanvas(glCanvas, x, y, w, h)
+                    val dpr = jsDevicePixelRatio()
+                    val pw = (w * dpr).toInt(); val ph = (h * dpr).toInt()
+                    if (pw != lastPw.value || ph != lastPh.value) {
+                        // canvas.width/height reset the WebGL context — release old GL
+                        // objects first, then recreate everything after the resize.
+                        if (glReady.value) renderer.release(glApi)
+                        jsResizeCanvas(glCanvas, pw, ph)
+                        lastPw.value = pw; lastPh.value = ph
+                        renderer.onSurfaceCreated(glApi)
+                        glReady.value = true
+                    }
+                    renderer.onSurfaceChanged(glApi, pw, ph)
+                }
             }
-        }
+            .pointerInput(Unit) {
+                // Drag to rotate. detectDragGestures claims the gesture so the
+                // LazyColumn doesn't scroll while rotating.
+                detectDragGestures(
+                    onDragStart  = { onGestureActive(true) },
+                    onDragEnd    = { onGestureActive(false) },
+                    onDragCancel = { onGestureActive(false) },
+                ) { _, dragAmount ->
+                    renderer.handleTouchDrag(dragAmount.x, dragAmount.y)
+                }
+            }
+            .pointerInput(Unit) {
+                // Scroll-wheel zoom with list-scroll detection via debounce:
+                // - While scroll events arrive faster than 300 ms apart the list is
+                //   "in motion" and zoom is suppressed.
+                // - Once 300 ms pass with no scroll event the next wheel tick zooms.
+                // The event is never consumed so LazyColumn always receives it.
+                var scaleFactor = 1f
+                var debounceJob: Job? = null
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val scrollY = event.changes.fold(Offset.Zero) { acc, c ->
+                            acc + c.scrollDelta
+                        }.y
+                        if (scrollY != 0f) {
+                            val listScrolling = debounceJob?.isActive == true
+                            if (!listScrolling) {
+                                scaleFactor = (scaleFactor * if (scrollY > 0) 0.9f else 1.1f)
+                                    .coerceIn(0.5f, 3f)
+                                renderer.zoomFactor = scaleFactor
+                            }
+                            debounceJob?.cancel()
+                            debounceJob = zoomScope.launch { delay(300) }
+                        }
+                    }
+                }
+            }
     )
 }
 
@@ -150,18 +158,18 @@ private fun jsCreateCanvas(): JsAny = js("document.createElement('canvas')")
 private fun jsGetWebGL2Ctx(canvas: JsAny): WebGl2Ctx =
     js("canvas.getContext('webgl2', {alpha: true, antialias: false})")
 
-// Appends the canvas to <body> as a fixed-position overlay.
-private fun jsAppendToBody(canvas: JsAny): Unit = js("""
+// Attaches to <html> with pointer-events:none so Compose receives all pointer
+// events and the LazyColumn can scroll freely.
+private fun jsAppendToHtml(canvas: JsAny): Unit = js("""
     (canvas.style.position = 'fixed',
-     canvas.style.pointerEvents = 'auto',
+     canvas.style.pointerEvents = 'none',
      canvas.style.zIndex = '1',
-     document.body.appendChild(canvas))
+     document.documentElement.appendChild(canvas))
 """)
 
 private fun jsRemoveFromParent(canvas: JsAny): Unit =
     js("(canvas.parentNode && canvas.parentNode.removeChild(canvas))")
 
-// Sets CSS position/size (layout units, before DPR scaling).
 private fun jsStyleCanvas(canvas: JsAny, x: Int, y: Int, w: Int, h: Int): Unit = js("""
     (canvas.style.left   = x + 'px',
      canvas.style.top    = y + 'px',
@@ -169,34 +177,7 @@ private fun jsStyleCanvas(canvas: JsAny, x: Int, y: Int, w: Int, h: Int): Unit =
      canvas.style.height = h + 'px')
 """)
 
-// Sets the canvas backing-buffer resolution (physical pixels).
 private fun jsResizeCanvas(canvas: JsAny, w: Int, h: Int): Unit =
     js("(canvas.width = w, canvas.height = h)")
 
 private fun jsDevicePixelRatio(): Double = js("window.devicePixelRatio || 1.0")
-
-// ── Event wiring ─────────────────────────────────────────────────────────────
-
-private fun jsSetMouseDown      (c: JsAny, h: (JsAny?) -> Unit): Unit = js("c.onmousedown   = h")
-private fun jsSetMouseMove      (c: JsAny, h: (JsAny?) -> Unit): Unit = js("c.onmousemove   = h")
-private fun jsSetMouseUpAndLeave(c: JsAny, h: (JsAny?) -> Unit): Unit = js("(c.onmouseup = h, c.onmouseleave = h)")
-private fun jsSetWheel          (c: JsAny, h: (JsAny?) -> Unit): Unit = js("c.onwheel       = h")
-private fun jsSetTouchStart     (c: JsAny, h: (JsAny?) -> Unit): Unit = js("c.ontouchstart  = h")
-private fun jsSetTouchMove      (c: JsAny, h: (JsAny?) -> Unit): Unit = js("c.ontouchmove   = h")
-private fun jsSetTouchEnd       (c: JsAny, h: (JsAny?) -> Unit): Unit = js("(c.ontouchend = h, c.ontouchcancel = h)")
-
-private fun jsClearPointerEvents(c: JsAny): Unit = js("""
-    (c.onmousedown = null,  c.onmousemove = null,
-     c.onmouseup   = null,  c.onmouseleave = null, c.onwheel = null,
-     c.ontouchstart = null, c.ontouchmove  = null,
-     c.ontouchend   = null, c.ontouchcancel = null)
-""")
-
-// ── Event value accessors ─────────────────────────────────────────────────────
-
-private fun jsClientX(e: JsAny): Double        = js("e.clientX")
-private fun jsClientY(e: JsAny): Double        = js("e.clientY")
-private fun jsDeltaY (e: JsAny): Double        = js("e.deltaY")
-private fun jsPreventDefault(e: JsAny): Unit   = js("e.preventDefault()")
-private fun jsTouchClientX(e: JsAny, i: Int): Double = js("e.touches[i].clientX")
-private fun jsTouchClientY(e: JsAny, i: Int): Double = js("e.touches[i].clientY")
