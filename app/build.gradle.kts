@@ -1,5 +1,5 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -26,10 +26,10 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(project(path = ":bigbox3d-compose"))
-            implementation(compose.runtime)
-            implementation(compose.foundation)
-            implementation(compose.ui)
-            implementation(compose.material3)
+            implementation(libs.runtime)
+            implementation(libs.foundation)
+            implementation(libs.ui)
+            implementation(libs.material3)
         }
         androidMain.dependencies {
             implementation(libs.androidx.core.ktx)

@@ -27,10 +27,10 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":bigbox3d-core"))
-            implementation(compose.runtime)
-            implementation(compose.foundation)
-            implementation(compose.ui)
-            implementation(compose.material3)
+            implementation(libs.runtime)
+            implementation(libs.foundation)
+            implementation(libs.ui)
+            implementation(libs.material3)
             implementation(libs.coil3)
             implementation(libs.coil3.compose)
         }
