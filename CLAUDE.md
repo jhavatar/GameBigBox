@@ -31,7 +31,7 @@ src/
 ## Modules
 
 | Module | Type | Purpose |
-|---|---|---|
+|--------|------|---------|
 | `:bigbox3d-core` | KMP library (Android + wasmJs + JVM) | All 3D logic — GL abstraction, geometry, atlas building, rendering |
 | `:bigbox3d-compose` | KMP Compose library (Android + wasmJs + JVM) | `BigBox3D` Compose widget; image loading; platform GL surface |
 | `:opengl3` | Android library (legacy) | Original self-contained Android implementation; still published to JitPack |
@@ -42,7 +42,7 @@ src/
 ### Launch the demo app
 
 | Target | Command | Notes |
-|---|---|---|
+|--------|---------|-------|
 | **Android** | `./gradlew :app:installDebug` then `adb shell am start -n io.chthonic.gamebigbox/.MainActivity` | Requires a connected device or running emulator |
 | **Web** | `./gradlew :app:wasmJsBrowserDevelopmentRun` | Starts a dev server and opens `http://localhost:8080` automatically |
 | **Desktop (JVM)** | `./gradlew :app:run` | Opens a 520×900 dp native window via Compose Desktop |
@@ -65,6 +65,69 @@ src/
 ./gradlew connectedAndroidTest                   # instrumented tests
 ```
 
+## Publishing
+
+`:bigbox3d-core` and `:bigbox3d-compose` are configured for Maven Central under the group `io.github.jhavatar`.
+
+### One-time setup
+
+1. Register at [central.sonatype.com](https://central.sonatype.com) — the `io.github.jhavatar` namespace is auto-approved for GitHub users
+2. Verify the `io.github.jhavatar` namespace: add it in View Account → Namespaces, create a public GitHub repo named after the verification token, click Verify
+3. Generate a GPG key — **must be RSA** (BouncyCastle, used by Gradle signing, does not support the default Ed25519/ECDH key type):
+   ```bash
+   gpg --full-generate-key   # choose RSA and RSA, 4096 bits
+   gpg --list-secret-keys --keyid-format SHORT   # note the key ID
+   ```
+4. Upload the public key to a keyserver:
+   ```bash
+   gpg --export --armor YOUR_KEY_ID > public_key.asc
+   # upload public_key.asc at keys.openpgp.org → Upload
+   ```
+5. Write the private key to `~/.gradle/gradle.properties` (the key is too long to paste in an editor — use this instead):
+   ```bash
+   python3 -c "import subprocess; result = subprocess.run(['gpg','--export-secret-keys','--armor','YOUR_KEY_ID'], capture_output=True, text=True); key = result.stdout.replace('\n','\\\\n'); open('/Users/jhdevaal/.gradle/gradle.properties', 'a').write('signingInMemoryKey=' + key + '\n')"
+   ```
+   Then add the passphrase line manually:
+   ```bash
+   echo "signingInMemoryKeyPassword=your-gpg-passphrase" >> ~/.gradle/gradle.properties
+   ```
+6. Generate a user token: central.sonatype.com → View Account → Generate User Token
+7. Add the token credentials as **environment variables** in `~/.zshrc` — **do not use `~/.gradle/gradle.properties` for these** (Gradle build services that perform the upload cannot read project properties, but env vars are always available):
+   ```bash
+   echo 'export ORG_GRADLE_PROJECT_mavenCentralUsername="your-token-username"' >> ~/.zshrc
+   echo 'export ORG_GRADLE_PROJECT_mavenCentralPassword="your-token-password"' >> ~/.zshrc
+   source ~/.zshrc
+   ```
+
+### Release commands
+
+```bash
+# Publish and release both libraries to Maven Central
+./gradlew publishAndReleaseToMavenCentral
+
+# Override the version (default: library.version in libs.versions.toml, currently 1.0.0)
+./gradlew publishAndReleaseToMavenCentral -Plibrary.version=1.1.0
+```
+
+Maven Central is **immutable** — once a version is published it cannot be overwritten. Always bump `library.version` before republishing.
+
+### Troubleshooting
+
+- **`cannot recognise keyAlgorithm: 18`** — GPG key uses Ed25519/ECDH which BouncyCastle doesn't support. Regenerate with `gpg --full-generate-key` selecting RSA and RSA.
+- **`Invalid token`** — Maven Central credentials are being rejected. The `mavenCentralUsername`/`mavenCentralPassword` properties in `~/.gradle/gradle.properties` are NOT read by the upload build service — use the `ORG_GRADLE_PROJECT_` env vars in `~/.zshrc` instead.
+- **Deployment stuck in "Publishing"** — wait up to 30 minutes; if still stuck contact Sonatype support to drop it. Deployments in "Publishing" state cannot be dropped by users.
+- **"currently being published in another deployment"** — a previous failed attempt left a pending deployment. Drop it on central.sonatype.com → Deployments, then re-run.
+
+### Consumer dependency
+
+```kotlin
+// No extra repo URL needed — Maven Central is in the default search path
+implementation("io.github.jhavatar:bigbox3d-compose:1.0.0")
+// bigbox3d-core is resolved automatically as a transitive dependency
+```
+
+---
+
 ## Architecture
 
 ### `:bigbox3d-core`
@@ -72,7 +135,7 @@ src/
 Pure KMP — zero platform imports in `commonMain`.
 
 | Source set | Contents |
-|---|---|
+|------------|----------|
 | `commonMain` | `GlApi` interface + GL constants (including `isGlEs(): Boolean` for per-platform GLSL preamble selection); `RawImage` (RGBA `ByteArray`); `CuboidDimensions`; `AtlasBuilder` (pure-Kotlin nearest-neighbour scale + blit); `Matrix4` (pure-Kotlin port of `android.opengl.Matrix`); `Cuboid` (VBO-based GL rendering via `GlApi`); `CuboidRenderer` (rotation/zoom state, drives `Cuboid`); visual config enums |
 | `androidMain` | `GlApiImpl` — thin delegation of every `GlApi` call to `GLES30.*` |
 | `wasmJsMain` | `WebGl2Ctx` external interface (WebGL2 method declarations); `GlApiImpl(gl: WebGl2Ctx)` — maps OpenGL integer handles to WebGL JS objects via internal maps |
@@ -92,7 +155,7 @@ Pure KMP — zero platform imports in `commonMain`.
 KMP Compose widget layer. Depends on `:bigbox3d-core` via `api()` (so core types are re-exported to consumers).
 
 | Source set | Contents |
-|---|---|
+|------------|----------|
 | `commonMain` | `BigBox3D` composable (public API); `BoxTextureUrls` sealed interface (`FullBoxTextureUrls` / `EquatorialBoxTextureUrls`); `expect BigBox3DGlSurface`; `expect loadRawImageFromUrl`; `expect val ioDispatcher` |
 | `androidMain` | `actual BigBox3DGlSurface` — `GLSurfaceView` in `AndroidView`, bridges `Renderer` callbacks to `CuboidRenderer`; gestures handled via `Modifier.pointerInput` (horizontal drag = rotate, vertical passes to `LazyColumn` for scroll, pinch = zoom); `actual loadRawImageFromUrl` — Coil 3 → `BitmapImage` → ARGB→RGBA extraction; `actual ioDispatcher = Dispatchers.IO`; internet permission in manifest |
 | `wasmJsMain` | `actual BigBox3DGlSurface` — creates a WebGL `<canvas>` appended to `<html>` (not `<body>`) with `position:fixed; pointer-events:none; z-index:1`; gestures handled via `Modifier.pointerInput` on the Box (drag = rotate; scroll = LazyColumn; scroll over stationary box = zoom via 300 ms debounce); `onSurfaceCreated` called after first `jsResizeCanvas` due to WebGL context-reset behaviour; `localToWindow(Offset.Zero)` + `coords.size` gives full composable dimensions during scroll; `actual loadRawImageFromUrl` — browser `fetch` → `createImageBitmap` → `OffscreenCanvas` → `getImageData` pixels; `actual ioDispatcher = Dispatchers.Default` |
@@ -122,7 +185,7 @@ KMP Compose widget layer. Depends on `:bigbox3d-core` via `api()` (so core types
 ### `:app`
 
 | Source set | Contents |
-|---|---|
+|------------|----------|
 | `commonMain` | `MainScreen`, `SettingsPanel`, and all UI composables — shared between Android, web, and desktop |
 | `androidMain` | `MainActivity` (`ComponentActivity` entry point, wraps `MainScreen` in `GameBigBoxTheme`); `@Preview` composable; `GameBigBoxTheme` with Android dynamic colors |
 | `wasmJsMain` | `main()` — web entry point using `ComposeViewport(document.body!!)` wrapped in `MaterialTheme` |
@@ -136,7 +199,7 @@ Self-contained Android-only implementation using `android.graphics.Bitmap` and `
 ## Visual Config Enums (in `:bigbox3d-core`)
 
 | Enum | Values |
-|---|---|
+|------|--------|
 | `GlossLevel` | MATTE (0.0) → HIGH_GLOSS (1.0) |
 | `ShadowOpacity` | NONE → FULL (0.0–1.0 alpha) |
 | `ShadowFade` | SUPER_SOFT / SOFT / REALISTIC / DRAMATIC |
@@ -175,5 +238,5 @@ All four steps are complete. `:bigbox3d-core`, `:bigbox3d-compose`, and `:app` a
 - Android gesture handling uses `Modifier.pointerInput` on the `AndroidView` (not a native `OnTouchListener`). Horizontal-dominant drags rotate the box; vertical-dominant drags are released to the `LazyColumn` for scroll; pinch zooms. The old `requestDisallowInterceptTouchEvent` approach broke in Compose MP 1.10.x because Compose's pointer-input scroll system no longer honours it from a native child view.
 - `BackHandler` (collapse bottom sheet on Android back press) was removed from `MainScreen` when it moved to `commonMain`. It can be re-added via an `expect`/`actual` if needed.
 - Pinch-to-zoom on web touch screens is not yet implemented. Mouse-wheel zoom works when the list is stationary (suppressed during list scroll via a 300 ms debounce).
-- Desktop/JVM platform consumers must add LWJGL3 native jars as `runtimeOnly` dependencies — the libraries ship only the binding JARs. Required natives: `org.lwjgl:lwjgl:3.3.4:natives-<platform>`, `org.lwjgl:lwjgl-opengl:3.3.4:natives-<platform>`, and `org.lwjgl:lwjgl-glfw:3.3.4:natives-<platform>` (GLFW natives are only needed on Linux/Windows; macOS uses CGL).
+- Desktop/JVM platform consumers must add LWJGL3 native jars as `runtimeOnly` dependencies — the libraries ship only the binding JARs. Required natives: `org.lwjgl:lwjgl:3.4.1:natives-<platform>`, `org.lwjgl:lwjgl-opengl:3.4.1:natives-<platform>`, and `org.lwjgl:lwjgl-glfw:3.4.1:natives-<platform>` (GLFW natives are only needed on Linux/Windows; macOS uses CGL).
 - On macOS, `glfwInit()` crashes with `SIGILL` in `libdispatch.dylib` (`_dispatch_assert_queue_fail`) when called from any non-main thread, including the AWT EDT, because GLFW's macOS path calls HIToolbox's Text Services Manager which asserts the GCD main queue. The JVM implementation bypasses this entirely by using CGL on macOS.

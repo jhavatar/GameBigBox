@@ -6,8 +6,11 @@ plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.kotlin.compose)
-    id("maven-publish")
+    alias(libs.plugins.vanniktech.publish)
 }
+
+group = "io.github.jhavatar"
+version = project.findProperty("library.version") as? String ?: libs.versions.library.get()
 
 kotlin {
     androidTarget {
@@ -67,4 +70,37 @@ android {
     }
     setProperty("archivesBaseName", "bigbox3d-compose")
     sourceSets["main"].manifest.srcFile("src/androidMain/AndroidManifest.xml")
+}
+
+mavenPublishing {
+    publishToMavenCentral()
+    signAllPublications()
+    coordinates(
+        "io.github.jhavatar",
+        "bigbox3d-compose",
+        project.findProperty("library.version") as? String ?: libs.versions.library.get()
+    )
+    pom {
+        name.set("BigBox3D Compose")
+        description.set("Compose Multiplatform widget rendering a 3D textured cuboid (big box) via OpenGL ES on Android, WebGL2 on web, and LWJGL on desktop.")
+        url.set("https://github.com/jhavatar/GameBigBox")
+        licenses {
+            license {
+                name.set("Apache License 2.0")
+                url.set("https://www.apache.org/licenses/LICENSE-2.0")
+            }
+        }
+        developers {
+            developer {
+                id.set("jhavatar")
+                name.set("jhavatar")
+                email.set("jhavatar@users.noreply.github.com")
+            }
+        }
+        scm {
+            connection.set("scm:git:git://github.com/jhavatar/GameBigBox.git")
+            developerConnection.set("scm:git:ssh://github.com/jhavatar/GameBigBox.git")
+            url.set("https://github.com/jhavatar/GameBigBox")
+        }
+    }
 }
