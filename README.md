@@ -1,8 +1,12 @@
-UI widget (Composable) that renders the big box of a PC game in 3D, e.g. 
+# BigBox3d
+
+Kotlin Compose UI widget that renders the big box of a PC game in 3D, e.g. 
 <video src="https://github.com/user-attachments/assets/f829a1c2-ae13-4440-8c33-60e931a3c7bb" controls></video>
 
+KMP library with targets (currently): Android, Web, JVM/Desktop. See more info in CLAUDE.md.
 
-## How to get it in your build
+## Original legacy Android only library
+### How to get it in your build
 Step 1. Add it in your settings.gradle.kts at the end of repositories:
 ```
 	dependencyResolutionManagement {
