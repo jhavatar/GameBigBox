@@ -136,7 +136,7 @@ Pure KMP — zero platform imports in `commonMain`.
 
 | Source set | Contents |
 |------------|----------|
-| `commonMain` | `GlApi` interface + GL constants (including `isGlEs(): Boolean` for per-platform GLSL preamble selection); `RawImage` (RGBA `ByteArray`); `CuboidDimensions` + three factory functions: `cuboidDimensions(front, side)`, `cuboidDimensionsFromTop(front, top)`, `cuboidDimensions(front, depthRatio)`; `AtlasBuilder` (pure-Kotlin nearest-neighbour scale + blit); `Matrix4` (pure-Kotlin port of `android.opengl.Matrix`); `Cuboid` (VBO-based GL rendering via `GlApi`); `CuboidRenderer` (rotation/zoom state, drives `Cuboid`); visual config enums |
+| `commonMain` | `GlApi` interface + GL constants (including `isGlEs(): Boolean` for per-platform GLSL preamble selection); `RawImage` (RGBA `ByteArray`); `CuboidDimensions` + three factory functions: `cuboidDimensions(front, side)`, `cuboidDimensionsFromTop(front, top)`, `cuboidDimensions(front, depthRatio)`; `AtlasBuilder` (pure-Kotlin nearest-neighbour scale + blit); `Matrix4` (pure-Kotlin port of `android.opengl.Matrix`); `Cuboid` (VBO-based GL rendering via `GlApi`); `CuboidRenderer` (rotation/zoom state, drives `Cuboid`); visual config enums including `RotationSpeed` |
 | `androidMain` | `GlApiImpl` — thin delegation of every `GlApi` call to `GLES30.*` |
 | `wasmJsMain` | `WebGl2Ctx` external interface (WebGL2 method declarations); `GlApiImpl(gl: WebGl2Ctx)` — maps OpenGL integer handles to WebGL JS objects via internal maps |
 | `jvmMain` | `GlApiImpl` — delegates to LWJGL3 (`org.lwjgl.opengl.GL11`/`GL15`/`GL20`); uses `MemoryStack` for zero-GC buffer allocation on VBO uploads and uniform calls |
@@ -200,6 +200,7 @@ Self-contained Android-only implementation using `android.graphics.Bitmap` and `
 
 | Enum | Values |
 |------|--------|
+| `RotationSpeed` | NONE (0°/s) / VERY_SLOW / SLOW / NORMAL / FAST / VERY_FAST (~240°/s). Default in `BigBox3D` is `VERY_SLOW`. Each value's `deltaX` is passed directly to `CuboidRenderer.rotate()`, which multiplies by `ROTATION_SENSITIVITY (0.4f)`. `NONE` skips the `rotate()` call entirely. Replaces the old `autoRotate: Boolean` + `rotationSpeed: Float` parameters. |
 | `GlossLevel` | MATTE (0.0) → HIGH_GLOSS (1.0) |
 | `ShadowOpacity` | NONE → FULL (0.0–1.0 alpha) |
 | `ShadowFade` | SUPER_SOFT / SOFT / REALISTIC / DRAMATIC |

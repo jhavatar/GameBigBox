@@ -36,6 +36,7 @@ import io.chthonic.bigbox3d.compose.BoxTextureUrls
 import io.chthonic.bigbox3d.compose.CapSource
 import io.chthonic.bigbox3d.compose.SideSource
 import io.chthonic.bigbox3d.core.GlossLevel
+import io.chthonic.bigbox3d.core.RotationSpeed
 import io.chthonic.bigbox3d.core.ShadowFade
 import io.chthonic.bigbox3d.core.ShadowOpacity
 import kotlin.math.roundToInt
@@ -54,7 +55,7 @@ fun MainScreen() {
     var shadowFade by remember { mutableStateOf(ShadowFade.REALISTIC) }
     var shadowX by remember { mutableFloatStateOf(0f) }
     var shadowY by remember { mutableFloatStateOf(0f) }
-    var autoRotate by remember { mutableStateOf(true) }
+    var rotationSpeed by remember { mutableStateOf(RotationSpeed.VERY_SLOW) }
 
     BottomSheetScaffold(
         modifier = Modifier.fillMaxSize(),
@@ -72,8 +73,8 @@ fun MainScreen() {
                 onShadowXChange = { shadowX = it },
                 shadowY = shadowY,
                 onShadowYChange = { shadowY = it },
-                autoRotate = autoRotate,
-                onAutoRotateChange = { autoRotate = it },
+                rotationSpeed = rotationSpeed,
+                onRotationSpeedChange = { rotationSpeed = it },
             )
         }
     ) { innerPadding ->
@@ -181,7 +182,7 @@ fun MainScreen() {
                         .border(1.dp, Color.Black)
                         .fillMaxWidth(),
                     textureUrls = boxes[idx],
-                    autoRotate = autoRotate,
+                    rotationSpeed = rotationSpeed,
                     glossLevel = glossLevel,
                     shadowOpacity = shadowOpacity,
                     shadowFade = shadowFade,
@@ -207,28 +208,20 @@ fun SettingsPanel(
     onShadowXChange: (Float) -> Unit,
     shadowY: Float,
     onShadowYChange: (Float) -> Unit,
-    autoRotate: Boolean,
-    onAutoRotateChange: (Boolean) -> Unit,
+    rotationSpeed: RotationSpeed,
+    onRotationSpeedChange: (RotationSpeed) -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 16.dp, horizontal = 30.dp)
     ) {
-        Row {
-            Text(
-                text = "Settings",
-                style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.align(Alignment.Top),
-            )
-            Spacer(Modifier.weight(1f))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.align(Alignment.Bottom)
-            ) {
-                Text(text = "Rotating")
-                Checkbox(checked = autoRotate, onCheckedChange = onAutoRotateChange)
-            }
+        Text(
+            text = "Settings",
+            style = MaterialTheme.typography.headlineSmall,
+        )
+        SettingEnum("Rotation Speed", RotationSpeed.entries.size, rotationSpeed.ordinal) {
+            onRotationSpeedChange(RotationSpeed.entries[it])
         }
         SettingEnum("Gloss Level", GlossLevel.entries.size, glossLevel.ordinal) {
             onGlossLevelChange(GlossLevel.entries[it])

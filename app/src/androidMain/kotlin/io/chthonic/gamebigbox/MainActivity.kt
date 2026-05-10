@@ -7,6 +7,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import io.chthonic.bigbox3d.core.GlossLevel
+import io.chthonic.bigbox3d.core.RotationSpeed
 import io.chthonic.bigbox3d.core.ShadowFade
 import io.chthonic.bigbox3d.core.ShadowOpacity
 import io.chthonic.gamebigbox.ui.theme.GameBigBoxTheme
@@ -38,8 +39,8 @@ fun PreviewSettings() {
             onShadowXChange       = {},
             shadowY               = 0f,
             onShadowYChange       = {},
-            autoRotate            = true,
-            onAutoRotateChange    = {},
+            rotationSpeed         = RotationSpeed.VERY_SLOW,
+            onRotationSpeedChange = {},
         )
     }
 }

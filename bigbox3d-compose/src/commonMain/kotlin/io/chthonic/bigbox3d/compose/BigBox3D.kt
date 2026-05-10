@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import coil3.compose.LocalPlatformContext
 import io.chthonic.bigbox3d.core.BoxTextureAtlas
 import io.chthonic.bigbox3d.core.GlossLevel
+import io.chthonic.bigbox3d.core.RotationSpeed
 import io.chthonic.bigbox3d.core.ShadowFade
 import io.chthonic.bigbox3d.core.ShadowOpacity
 import io.chthonic.bigbox3d.core.buildAtlas2x3
@@ -37,7 +38,7 @@ import kotlinx.coroutines.withContext
 fun BigBox3D(
     textureUrls: BoxTextureUrls,
     modifier: Modifier = Modifier,
-    autoRotate: Boolean = true,
+    rotationSpeed: RotationSpeed = RotationSpeed.VERY_SLOW,
     glossLevel: GlossLevel = GlossLevel.SEMI_GLOSS,
     shadowOpacity: ShadowOpacity = ShadowOpacity.STRONG,
     shadowFade: ShadowFade = ShadowFade.REALISTIC,
@@ -86,7 +87,7 @@ fun BigBox3D(
         BigBox3DGlSurface(
             atlas = a,
             modifier = modifier,
-            autoRotate = autoRotate,
+            rotationSpeed = rotationSpeed,
             glossLevel = glossLevel,
             shadowOpacity = shadowOpacity,
             shadowFade = shadowFade,

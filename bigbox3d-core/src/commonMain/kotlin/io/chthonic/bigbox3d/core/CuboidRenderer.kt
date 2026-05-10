@@ -19,7 +19,7 @@ private const val STALE_ZOOM = -1f
 class CuboidRenderer(private val atlas: BoxTextureAtlas) {
 
     var glossLevel: GlossLevel = GlossLevel.SEMI_GLOSS
-    var autoRotate: Boolean = true
+    var rotationSpeed: RotationSpeed = RotationSpeed.VERY_SLOW
     var zoomFactor: Float = DEFAULT_ZOOM_FACTOR
     var shadowOpacity: ShadowOpacity = ShadowOpacity.STRONG
     var shadowFade: ShadowFade = ShadowFade.REALISTIC
@@ -51,7 +51,7 @@ class CuboidRenderer(private val atlas: BoxTextureAtlas) {
 
     fun onDrawFrame(gl: GlApi) {
         gl.glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
-        if (autoRotate) rotate(ROTATION_SENSITIVITY, 0f)
+        if (rotationSpeed != RotationSpeed.NONE) rotate(rotationSpeed.deltaX, 0f)
 
         if (zoomFactor != lastZoomFactor) {
             val cameraZ = DEFAULT_ZOOM / zoomFactor
