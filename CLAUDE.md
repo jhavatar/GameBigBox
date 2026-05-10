@@ -136,7 +136,7 @@ Pure KMP — zero platform imports in `commonMain`.
 
 | Source set | Contents |
 |------------|----------|
-| `commonMain` | `GlApi` interface + GL constants (including `isGlEs(): Boolean` for per-platform GLSL preamble selection); `RawImage` (RGBA `ByteArray`); `CuboidDimensions`; `AtlasBuilder` (pure-Kotlin nearest-neighbour scale + blit); `Matrix4` (pure-Kotlin port of `android.opengl.Matrix`); `Cuboid` (VBO-based GL rendering via `GlApi`); `CuboidRenderer` (rotation/zoom state, drives `Cuboid`); visual config enums |
+| `commonMain` | `GlApi` interface + GL constants (including `isGlEs(): Boolean` for per-platform GLSL preamble selection); `RawImage` (RGBA `ByteArray`); `CuboidDimensions` + three factory functions: `cuboidDimensions(front, side)`, `cuboidDimensionsFromTop(front, top)`, `cuboidDimensions(front, depthRatio)`; `AtlasBuilder` (pure-Kotlin nearest-neighbour scale + blit); `Matrix4` (pure-Kotlin port of `android.opengl.Matrix`); `Cuboid` (VBO-based GL rendering via `GlApi`); `CuboidRenderer` (rotation/zoom state, drives `Cuboid`); visual config enums |
 | `androidMain` | `GlApiImpl` — thin delegation of every `GlApi` call to `GLES30.*` |
 | `wasmJsMain` | `WebGl2Ctx` external interface (WebGL2 method declarations); `GlApiImpl(gl: WebGl2Ctx)` — maps OpenGL integer handles to WebGL JS objects via internal maps |
 | `jvmMain` | `GlApiImpl` — delegates to LWJGL3 (`org.lwjgl.opengl.GL11`/`GL15`/`GL20`); uses `MemoryStack` for zero-GC buffer allocation on VBO uploads and uniform calls |
@@ -156,15 +156,15 @@ KMP Compose widget layer. Depends on `:bigbox3d-core` via `api()` (so core types
 
 | Source set | Contents |
 |------------|----------|
-| `commonMain` | `BigBox3D` composable (public API); `BoxTextureUrls` sealed interface (`FullBoxTextureUrls` / `EquatorialBoxTextureUrls`); `expect BigBox3DGlSurface`; `expect loadRawImageFromUrl`; `expect val ioDispatcher` |
+| `commonMain` | `BigBox3D` composable (public API); `BoxTextureUrls` data class + `SideSource` sealed interface (`Explicit`, `Spine`, `ColorFill`) + `CapSource` sealed interface (`Explicit`, `ColorFill`); `RawImageExt.kt` (`edgeAverageColor()` — averages edge pixels of a `RawImage` to infer background color); `expect BigBox3DGlSurface`; `expect loadRawImageFromUrl`; `expect val ioDispatcher` |
 | `androidMain` | `actual BigBox3DGlSurface` — `GLSurfaceView` in `AndroidView`, bridges `Renderer` callbacks to `CuboidRenderer`; gestures handled via `Modifier.pointerInput` (horizontal drag = rotate, vertical passes to `LazyColumn` for scroll, pinch = zoom); `actual loadRawImageFromUrl` — Coil 3 → `BitmapImage` → ARGB→RGBA extraction; `actual ioDispatcher = Dispatchers.IO`; internet permission in manifest |
 | `wasmJsMain` | `actual BigBox3DGlSurface` — creates a WebGL `<canvas>` appended to `<html>` (not `<body>`) with `position:fixed; pointer-events:none; z-index:1`; gestures handled via `Modifier.pointerInput` on the Box (drag = rotate; scroll = LazyColumn; scroll over stationary box = zoom via 300 ms debounce); `onSurfaceCreated` called after first `jsResizeCanvas` due to WebGL context-reset behaviour; `localToWindow(Offset.Zero)` + `coords.size` gives full composable dimensions during scroll; `actual loadRawImageFromUrl` — browser `fetch` → `createImageBitmap` → `OffscreenCanvas` → `getImageData` pixels; `actual ioDispatcher = Dispatchers.Default` |
 | `jvmMain` | `actual BigBox3DGlSurface` — CGL headless context (macOS) or GLFW hidden window (Linux/Windows) → FBO → `glReadPixels` → Y-flip → `BufferedImage.toComposeImageBitmap()`, displayed via Compose `Image`; render loop via `withFrameNanos`; drag/scroll gestures via `pointerInput`; VAO bound before `onSurfaceCreated`; `actual loadRawImageFromUrl` — Skiko `Image.makeFromEncoded` (handles WebP) → `Surface` → pixel readback; `actual ioDispatcher = Dispatchers.IO` |
 
 **Data flow in `BigBox3D`:**
-1. `LaunchedEffect` loads URLs → `List<RawImage>` on `ioDispatcher` (capped at 1024 px)
-2. Builds `BoxTextureAtlas` on `Dispatchers.Default` (`buildAtlas2x3` + `cuboidDimensions`)
-3. Passes atlas to `BigBox3DGlSurface` (expect/actual); shows `CircularProgressIndicator` while loading
+1. `LaunchedEffect` loads URLs → `List<RawImage>` on `ioDispatcher` (capped at 1024 px). `SideSource.Spine` generates the right face by flipping the spine image horizontally. `SideSource.ColorFill` / `CapSource.ColorFill` generate solid-color 1×1 images (auto-derived from the front image's edge average when no color is supplied).
+2. Builds `BoxTextureAtlas` on `Dispatchers.Default` (`buildAtlas2x3` + dimension derivation). Depth is inferred in priority order: side image aspect ratio → top image aspect ratio → hardcoded fallback `0.18f`.
+3. Passes atlas to `BigBox3DGlSurface` (expect/actual); shows `CircularProgressIndicator` while loading. `supportsFullXAxisRotation` is always `true` — all face combinations produce real content.
 
 **Web GL surface (`BigBox3DGlSurface.wasmJs.kt`):**
 - A WebGL2 `<canvas>` is appended to `<html>` (not `<body>`) with `position:fixed; pointer-events:none; z-index:1`. It must go to `<html>` because Compose MP 1.10.x sets `position:relative; overflow:hidden` on `<body>`, which causes a Firefox bug where `position:fixed` children have `offsetWidth=0` and are invisible.
@@ -232,7 +232,7 @@ All four steps are complete. `:bigbox3d-core`, `:bigbox3d-compose`, and `:app` a
 ## Known Issues / Quirks
 
 - `expect @Composable fun BigBox3DGlSurface` triggers an IDE warning ("has no corresponding expected declaration") — this is a false positive caused by the Compose compiler transforming `@Composable` signatures at the IR level. The build succeeds.
-- Internal class `EquitorialBoxTextureBitmaps` in `:opengl3` contains a typo ("Equitorial") — the public `EquatorialBoxTextureUrls` is spelled correctly.
+- Internal class `EquitorialBoxTextureBitmaps` in `:opengl3` contains a typo ("Equitorial") — the public `EquatorialBoxTextureUrls` in that module is spelled correctly. Note: `:bigbox3d-compose` has replaced its own `FullBoxTextureUrls`/`EquatorialBoxTextureUrls` with the composable `BoxTextureUrls` + `SideSource` + `CapSource` types; `:opengl3` retains its own independent hierarchy.
 - The Kotlin/Wasm stdlib's `WebGL2RenderingContext` binding is incomplete (many methods missing). The `WebGl2Ctx` custom `external interface` in `bigbox3d-core:wasmJsMain` works around this.
 - The web `BigBox3DGlSurface` overlays a `position:fixed; pointer-events:none` canvas on `<html>`. Multiple `BigBox3D` widgets produce independent canvases at `z-index:1`. Because `pointer-events:none`, all gestures are routed through Compose's pointer system on the Box placeholder beneath.
 - Android gesture handling uses `Modifier.pointerInput` on the `AndroidView` (not a native `OnTouchListener`). Horizontal-dominant drags rotate the box; vertical-dominant drags are released to the `LazyColumn` for scroll; pinch zooms. The old `requestDisallowInterceptTouchEvent` approach broke in Compose MP 1.10.x because Compose's pointer-input scroll system no longer honours it from a native child view.

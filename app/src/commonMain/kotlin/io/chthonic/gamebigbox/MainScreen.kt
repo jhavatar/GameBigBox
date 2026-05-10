@@ -32,8 +32,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import io.chthonic.bigbox3d.compose.BigBox3D
-import io.chthonic.bigbox3d.compose.EquatorialBoxTextureUrls
-import io.chthonic.bigbox3d.compose.FullBoxTextureUrls
+import io.chthonic.bigbox3d.compose.BoxTextureUrls
+import io.chthonic.bigbox3d.compose.CapSource
+import io.chthonic.bigbox3d.compose.SideSource
 import io.chthonic.bigbox3d.core.GlossLevel
 import io.chthonic.bigbox3d.core.ShadowFade
 import io.chthonic.bigbox3d.core.ShadowOpacity
@@ -48,12 +49,12 @@ fun MainScreen() {
         )
     )
 
-    var glossLevel    by remember { mutableStateOf(GlossLevel.SEMI_GLOSS) }
+    var glossLevel by remember { mutableStateOf(GlossLevel.SEMI_GLOSS) }
     var shadowOpacity by remember { mutableStateOf(ShadowOpacity.STRONG) }
-    var shadowFade    by remember { mutableStateOf(ShadowFade.REALISTIC) }
-    var shadowX       by remember { mutableFloatStateOf(0f) }
-    var shadowY       by remember { mutableFloatStateOf(0f) }
-    var autoRotate    by remember { mutableStateOf(true) }
+    var shadowFade by remember { mutableStateOf(ShadowFade.REALISTIC) }
+    var shadowX by remember { mutableFloatStateOf(0f) }
+    var shadowY by remember { mutableFloatStateOf(0f) }
+    var autoRotate by remember { mutableStateOf(true) }
 
     BottomSheetScaffold(
         modifier = Modifier.fillMaxSize(),
@@ -61,64 +62,110 @@ fun MainScreen() {
         sheetPeekHeight = 64.dp,
         sheetContent = {
             SettingsPanel(
-                glossLevel        = glossLevel,
-                onGlossLevelChange   = { glossLevel    = it },
-                shadowOpacity     = shadowOpacity,
+                glossLevel = glossLevel,
+                onGlossLevelChange = { glossLevel = it },
+                shadowOpacity = shadowOpacity,
                 onShadowOpacityChange = { shadowOpacity = it },
-                shadowFade        = shadowFade,
-                onShadowFadeChange   = { shadowFade    = it },
-                shadowX           = shadowX,
-                onShadowXChange      = { shadowX       = it },
-                shadowY           = shadowY,
-                onShadowYChange      = { shadowY       = it },
-                autoRotate        = autoRotate,
-                onAutoRotateChange   = { autoRotate    = it },
+                shadowFade = shadowFade,
+                onShadowFadeChange = { shadowFade = it },
+                shadowX = shadowX,
+                onShadowXChange = { shadowX = it },
+                shadowY = shadowY,
+                onShadowYChange = { shadowY = it },
+                autoRotate = autoRotate,
+                onAutoRotateChange = { autoRotate = it },
             )
         }
     ) { innerPadding ->
         val boxes = remember {
             listOf(
-                FullBoxTextureUrls(
-                    front  = "https://bigboxcollection.com/images/textures/front/Doom2.webp",
-                    back   = "https://bigboxcollection.com/images/textures/back/Doom2.webp",
-                    top    = "https://bigboxcollection.com/images/textures/top/Doom2.webp",
-                    bottom = "https://bigboxcollection.com/images/textures/bottom/Doom2.webp",
-                    left   = "https://bigboxcollection.com/images/textures/left/Doom2.webp",
-                    right  = "https://bigboxcollection.com/images/textures/right/Doom2.webp",
+                BoxTextureUrls(
+                    front = "https://bigboxcollection.com/images/textures/front/Doom2.webp",
+                    back = "https://bigboxcollection.com/images/textures/back/Doom2.webp",
+                    sides = SideSource.Explicit(
+                        left = "https://bigboxcollection.com/images/textures/left/Doom2.webp",
+                        right = "https://bigboxcollection.com/images/textures/right/Doom2.webp",
+                    ),
+                    caps = CapSource.Explicit(
+                        top = "https://bigboxcollection.com/images/textures/top/Doom2.webp",
+                        bottom = "https://bigboxcollection.com/images/textures/bottom/Doom2.webp",
+                    ),
                 ),
-                EquatorialBoxTextureUrls(
+                BoxTextureUrls(
+                    front = "https://bigboxcollection.com/images/textures/front/Doom2.webp",
+                    back = "https://bigboxcollection.com/images/textures/back/Doom2.webp",
+                    sides = SideSource.ColorFill(),
+                    caps = CapSource.ColorFill(),
+                ),
+                BoxTextureUrls(
                     front = "https://bigboxcollection.com/images/textures/front/StarControl.webp",
-                    back  = "https://bigboxcollection.com/images/textures/back/StarControl.webp",
-                    left  = "https://bigboxcollection.com/images/textures/left/StarControl.webp",
-                    right = "https://bigboxcollection.com/images/textures/right/StarControl.webp",
+                    back = "https://bigboxcollection.com/images/textures/back/StarControl.webp",
+                    sides = SideSource.Explicit(
+                        left = "https://bigboxcollection.com/images/textures/left/StarControl.webp",
+                        right = "https://bigboxcollection.com/images/textures/right/StarControl.webp",
+                    ),
+                    caps = CapSource.ColorFill(),
                 ),
-                FullBoxTextureUrls(
-                    front  = "https://bigboxcollection.com/images/textures/front/StarTrekTNGFinalUnityCE.webp",
-                    back   = "https://bigboxcollection.com/images/textures/back/StarTrekTNGFinalUnityCE.webp",
-                    top    = "https://bigboxcollection.com/images/textures/top/StarTrekTNGFinalUnityCE.webp",
-                    bottom = "https://bigboxcollection.com/images/textures/bottom/StarTrekTNGFinalUnityCE.webp",
-                    left   = "https://bigboxcollection.com/images/textures/left/StarTrekTNGFinalUnityCE.webp",
-                    right  = "https://bigboxcollection.com/images/textures/right/StarTrekTNGFinalUnityCE.webp",
+                BoxTextureUrls(
+                    front = "https://bigboxcollection.com/images/textures/front/StarTrekTNGFinalUnityCE.webp",
+                    back = "https://bigboxcollection.com/images/textures/back/StarTrekTNGFinalUnityCE.webp",
+                    sides = SideSource.Explicit(
+                        left = "https://bigboxcollection.com/images/textures/left/StarTrekTNGFinalUnityCE.webp",
+                        right = "https://bigboxcollection.com/images/textures/right/StarTrekTNGFinalUnityCE.webp",
+                    ),
+                    caps = CapSource.Explicit(
+                        top = "https://bigboxcollection.com/images/textures/top/StarTrekTNGFinalUnityCE.webp",
+                        bottom = "https://bigboxcollection.com/images/textures/bottom/StarTrekTNGFinalUnityCE.webp",
+                    ),
                 ),
-                FullBoxTextureUrls(
-                    front  = "https://bigboxcollection.com/images/textures/front/SimCity2000DE.webp",
-                    back   = "https://bigboxcollection.com/images/textures/back/SimCity2000DE.webp",
-                    top    = "https://bigboxcollection.com/images/textures/top/SimCity2000DE.webp",
-                    bottom = "https://bigboxcollection.com/images/textures/bottom/SimCity2000DE.webp",
-                    left   = "https://bigboxcollection.com/images/textures/left/SimCity2000DE.webp",
-                    right  = "https://bigboxcollection.com/images/textures/right/SimCity2000DE.webp",
+                BoxTextureUrls(
+                    front = "https://bigboxcollection.com/images/textures/front/SimCity2000DE.webp",
+                    back = "https://bigboxcollection.com/images/textures/back/SimCity2000DE.webp",
+                    sides = SideSource.Explicit(
+                        left = "https://bigboxcollection.com/images/textures/left/SimCity2000DE.webp",
+                        right = "https://bigboxcollection.com/images/textures/right/SimCity2000DE.webp",
+                    ),
+                    caps = CapSource.Explicit(
+                        top = "https://bigboxcollection.com/images/textures/top/SimCity2000DE.webp",
+                        bottom = "https://bigboxcollection.com/images/textures/bottom/SimCity2000DE.webp",
+                    ),
                 ),
-                FullBoxTextureUrls(
-                    front  = "https://bigboxcollection.com/images/textures/front/Ultima9DragonEditionPacificAsia.webp",
-                    back   = "https://bigboxcollection.com/images/textures/back/Ultima9DragonEditionPacificAsia.webp",
-                    top    = "https://bigboxcollection.com/images/textures/top/Ultima9DragonEditionPacificAsia.webp",
-                    bottom = "https://bigboxcollection.com/images/textures/bottom/Ultima9DragonEditionPacificAsia.webp",
-                    left   = "https://bigboxcollection.com/images/textures/left/Ultima9DragonEditionPacificAsia.webp",
-                    right  = "https://bigboxcollection.com/images/textures/right/Ultima9DragonEditionPacificAsia.webp",
+                BoxTextureUrls(
+                    front = "https://bigboxcollection.com/images/textures/front/SimCity2000DE.webp",
+                    back = "https://bigboxcollection.com/images/textures/back/SimCity2000DE.webp",
+                    sides = SideSource.ColorFill(Color.Magenta),
+                    caps = CapSource.Explicit(
+                        top = "https://bigboxcollection.com/images/textures/top/SimCity2000DE.webp",
+                        bottom = "https://bigboxcollection.com/images/textures/bottom/SimCity2000DE.webp",
+                    ),
+                ),
+                BoxTextureUrls(
+                    front = "https://bigboxcollection.com/images/textures/front/Ultima9DragonEditionPacificAsia.webp",
+                    back = "https://bigboxcollection.com/images/textures/back/Ultima9DragonEditionPacificAsia.webp",
+                    sides = SideSource.Explicit(
+                        left = "https://bigboxcollection.com/images/textures/left/Ultima9DragonEditionPacificAsia.webp",
+                        right = "https://bigboxcollection.com/images/textures/right/Ultima9DragonEditionPacificAsia.webp",
+                    ),
+                    caps = CapSource.Explicit(
+                        top = "https://bigboxcollection.com/images/textures/top/Ultima9DragonEditionPacificAsia.webp",
+                        bottom = "https://bigboxcollection.com/images/textures/bottom/Ultima9DragonEditionPacificAsia.webp",
+                    ),
+                ),
+                BoxTextureUrls(
+                    front = "https://bigboxcollection.com/images/textures/front/Ultima9DragonEditionPacificAsia.webp",
+                    back = "https://bigboxcollection.com/images/textures/back/Ultima9DragonEditionPacificAsia.webp",
+                    sides = SideSource.Spine(
+                        "https://bigboxcollection.com/images/textures/left/Ultima9DragonEditionPacificAsia.webp",
+                    ),
+                    caps = CapSource.Explicit(
+                        top = "https://bigboxcollection.com/images/textures/top/Ultima9DragonEditionPacificAsia.webp",
+                        bottom = "https://bigboxcollection.com/images/textures/bottom/Ultima9DragonEditionPacificAsia.webp",
+                    ),
                 ),
             )
         }
-        val gestureStates = remember { mutableStateListOf(false, false, false, false, false) }
+        val gestureStates =
+            remember(boxes.size) { mutableStateListOf(*Array(boxes.size) { false }) }
         LazyColumn(
             Modifier
                 .statusBarsPadding()
@@ -133,14 +180,14 @@ fun MainScreen() {
                         .height(400.dp)
                         .border(1.dp, Color.Black)
                         .fillMaxWidth(),
-                    textureUrls       = boxes[idx],
-                    autoRotate        = autoRotate,
-                    glossLevel        = glossLevel,
-                    shadowOpacity     = shadowOpacity,
-                    shadowFade        = shadowFade,
+                    textureUrls = boxes[idx],
+                    autoRotate = autoRotate,
+                    glossLevel = glossLevel,
+                    shadowOpacity = shadowOpacity,
+                    shadowFade = shadowFade,
                     shadowXOffsetRatio = shadowX,
                     shadowYOffsetRatio = shadowY,
-                    onGestureActive   = { gestureStates[idx] = it },
+                    onGestureActive = { gestureStates[idx] = it },
                 )
             }
             item { Spacer(Modifier.height(300.dp)) }
@@ -175,7 +222,10 @@ fun SettingsPanel(
                 modifier = Modifier.align(Alignment.Top),
             )
             Spacer(Modifier.weight(1f))
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.align(Alignment.Bottom)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.align(Alignment.Bottom)
+            ) {
                 Text(text = "Rotating")
                 Checkbox(checked = autoRotate, onCheckedChange = onAutoRotateChange)
             }
@@ -195,7 +245,12 @@ fun SettingsPanel(
 }
 
 @Composable
-private fun SettingEnum(text: String, enumCount: Int, selectedIndex: Int, onSelectedChange: (Int) -> Unit) {
+private fun SettingEnum(
+    text: String,
+    enumCount: Int,
+    selectedIndex: Int,
+    onSelectedChange: (Int) -> Unit
+) {
     val lastIndex = enumCount - 1
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Text(text = text)
