@@ -122,7 +122,7 @@ Maven Central is **immutable** — once a version is published it cannot be over
 
 ```kotlin
 // No extra repo URL needed — Maven Central is in the default search path
-implementation("io.github.jhavatar:bigbox3d-compose:1.0.0")
+implementation("io.github.jhavatar:bigbox3d-compose:1.0.1")
 // bigbox3d-core is resolved automatically as a transitive dependency
 ```
 

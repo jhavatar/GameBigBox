@@ -8,7 +8,7 @@ KMP library with targets (currently): Android, Web, JVM/Desktop. See more info i
 ## KMP library usage
 
 ```kotlin
-implementation("io.github.jhavatar:bigbox3d-compose:1.0.0")
+implementation("io.github.jhavatar:bigbox3d-compose:1.0.1")
 ```
 
 ```kotlin
