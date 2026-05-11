@@ -1,15 +1,37 @@
-*.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
+# ── Gradle ────────────────────────────────────────────────────────────────────
+.gradle/
+build/
+**/build/
+
+# ── Local config ──────────────────────────────────────────────────────────────
 local.properties
+
+# ── Android Studio / IntelliJ ─────────────────────────────────────────────────
+*.iml
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+.idea/deploymentTargetDropDown.xml
+.idea/androidTestResultsUserPreferences.xml
+
+# ── Kotlin ────────────────────────────────────────────────────────────────────
+.kotlin/
+
+# ── KMP / Compose Multiplatform ───────────────────────────────────────────────
+**/commonMain/kotlin/expect/
+**/generated/
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
+.DS_Store
+**/.DS_Store
+
+# ── Android build artefacts ───────────────────────────────────────────────────
+/captures
+.externalNativeBuild/
+.cxx/
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
+*.orig
