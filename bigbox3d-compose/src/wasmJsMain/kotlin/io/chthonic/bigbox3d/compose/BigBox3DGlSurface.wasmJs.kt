@@ -22,6 +22,7 @@ import io.chthonic.bigbox3d.core.BoxTextureAtlas
 import io.chthonic.bigbox3d.core.CuboidRenderer
 import io.chthonic.bigbox3d.core.GlApiImpl
 import io.chthonic.bigbox3d.core.GlossLevel
+import io.chthonic.bigbox3d.core.RotationSpeed
 import io.chthonic.bigbox3d.core.ShadowFade
 import io.chthonic.bigbox3d.core.ShadowOpacity
 import io.chthonic.bigbox3d.core.WebGl2Ctx
@@ -30,7 +31,7 @@ import io.chthonic.bigbox3d.core.WebGl2Ctx
 internal actual fun BigBox3DGlSurface(
     atlas: BoxTextureAtlas,
     modifier: Modifier,
-    autoRotate: Boolean,
+    rotationSpeed: RotationSpeed,
     glossLevel: GlossLevel,
     shadowOpacity: ShadowOpacity,
     shadowFade: ShadowFade,
@@ -43,7 +44,7 @@ internal actual fun BigBox3DGlSurface(
     val glApi    = remember { GlApiImpl(glCtx) }
     val renderer = remember(atlas) { CuboidRenderer(atlas) }
 
-    renderer.autoRotate         = autoRotate
+    renderer.rotationSpeed      = rotationSpeed
     renderer.glossLevel         = glossLevel
     renderer.shadowOpacity      = shadowOpacity
     renderer.shadowFade         = shadowFade

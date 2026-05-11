@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import io.chthonic.bigbox3d.core.BoxTextureAtlas
 import io.chthonic.bigbox3d.core.GlossLevel
+import io.chthonic.bigbox3d.core.RotationSpeed
 import io.chthonic.bigbox3d.core.ShadowFade
 import io.chthonic.bigbox3d.core.ShadowOpacity
 
@@ -11,7 +12,7 @@ import io.chthonic.bigbox3d.core.ShadowOpacity
 internal expect fun BigBox3DGlSurface(
     atlas: BoxTextureAtlas,
     modifier: Modifier,
-    autoRotate: Boolean,
+    rotationSpeed: RotationSpeed,
     glossLevel: GlossLevel,
     shadowOpacity: ShadowOpacity,
     shadowFade: ShadowFade,

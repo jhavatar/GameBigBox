@@ -1,7 +1,6 @@
 package io.chthonic.bigbox3d.compose
 
 import android.opengl.GLSurfaceView
-import android.view.ScaleGestureDetector
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateCentroidSize
@@ -10,14 +9,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.viewinterop.AndroidView
 import io.chthonic.bigbox3d.core.BoxTextureAtlas
 import io.chthonic.bigbox3d.core.CuboidRenderer
 import io.chthonic.bigbox3d.core.GlApiImpl
 import io.chthonic.bigbox3d.core.GlossLevel
+import io.chthonic.bigbox3d.core.RotationSpeed
 import io.chthonic.bigbox3d.core.ShadowFade
 import io.chthonic.bigbox3d.core.ShadowOpacity
 import javax.microedition.khronos.egl.EGLConfig
@@ -29,7 +27,7 @@ import kotlin.math.hypot
 internal actual fun BigBox3DGlSurface(
     atlas: BoxTextureAtlas,
     modifier: Modifier,
-    autoRotate: Boolean,
+    rotationSpeed: RotationSpeed,
     glossLevel: GlossLevel,
     shadowOpacity: ShadowOpacity,
     shadowFade: ShadowFade,
@@ -65,7 +63,7 @@ internal actual fun BigBox3DGlSurface(
         update = { glView ->
             glView.queueEvent {
                 renderer.glossLevel        = glossLevel
-                renderer.autoRotate        = autoRotate
+                renderer.rotationSpeed     = rotationSpeed
                 renderer.shadowOpacity     = shadowOpacity
                 renderer.shadowFade        = shadowFade
                 renderer.shadowXOffsetRatio = shadowXOffsetRatio
