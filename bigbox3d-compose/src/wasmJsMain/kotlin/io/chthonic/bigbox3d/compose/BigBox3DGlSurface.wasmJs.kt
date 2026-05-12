@@ -3,16 +3,12 @@
 package io.chthonic.bigbox3d.compose
 
 import androidx.compose.foundation.gestures.detectDragGestures
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -63,10 +59,9 @@ internal actual fun BigBox3DGlSurface(
     // The canvas uses pointer-events:none so all pointer events pass through to Compose.
     // Gestures are handled by Modifier.pointerInput on the Box below, which lets the
     // LazyColumn scroll freely and lets detectDragGestures claim the drag for rotation.
-    val glReady   = remember { mutableStateOf(false) }
-    val lastPw    = remember { mutableStateOf(0) }
-    val lastPh    = remember { mutableStateOf(0) }
-    val zoomScope = rememberCoroutineScope()
+    val glReady = remember { mutableStateOf(false) }
+    val lastPw  = remember { mutableStateOf(0) }
+    val lastPh  = remember { mutableStateOf(0) }
 
     DisposableEffect(glCanvas) {
         jsAppendToHtml(glCanvas)
@@ -106,9 +101,12 @@ internal actual fun BigBox3DGlSurface(
                         jsResizeCanvas(glCanvas, pw, ph)
                         lastPw.value = pw; lastPh.value = ph
                         renderer.onSurfaceCreated(glApi)
+                        // onSurfaceChanged is only needed when dimensions change — moving
+                        // it outside this guard would recalculate the projection matrix
+                        // and invalidate the VP cache on every scroll position update.
+                        renderer.onSurfaceChanged(glApi, pw, ph)
                         glReady.value = true
                     }
-                    renderer.onSurfaceChanged(glApi, pw, ph)
                 }
             }
             .pointerInput(Unit) {
@@ -123,13 +121,14 @@ internal actual fun BigBox3DGlSurface(
                 }
             }
             .pointerInput(Unit) {
-                // Scroll-wheel zoom with list-scroll detection via debounce:
-                // - While scroll events arrive faster than 300 ms apart the list is
-                //   "in motion" and zoom is suppressed.
-                // - Once 300 ms pass with no scroll event the next wheel tick zooms.
+                // Scroll-wheel zoom with list-scroll detection via timestamp:
+                // - If two scroll events arrive within 300 ms the list is "in motion"
+                //   and zoom is suppressed.
+                // - Once scroll is idle for 300 ms the next wheel tick zooms.
                 // The event is never consumed so LazyColumn always receives it.
+                // Using a timestamp avoids allocating a new coroutine on every scroll tick.
                 var scaleFactor = 1f
-                var debounceJob: Job? = null
+                var lastScrollMs = 0.0
                 awaitPointerEventScope {
                     while (true) {
                         val event = awaitPointerEvent()
@@ -137,14 +136,14 @@ internal actual fun BigBox3DGlSurface(
                             acc + c.scrollDelta
                         }.y
                         if (scrollY != 0f) {
-                            val listScrolling = debounceJob?.isActive == true
+                            val now = jsDateNow()
+                            val listScrolling = (now - lastScrollMs) < 300.0
+                            lastScrollMs = now
                             if (!listScrolling) {
                                 scaleFactor = (scaleFactor * if (scrollY > 0) 0.9f else 1.1f)
                                     .coerceIn(0.5f, 3f)
                                 renderer.zoomFactor = scaleFactor
                             }
-                            debounceJob?.cancel()
-                            debounceJob = zoomScope.launch { delay(300) }
                         }
                     }
                 }
@@ -182,3 +181,4 @@ private fun jsResizeCanvas(canvas: JsAny, w: Int, h: Int): Unit =
     js("(canvas.width = w, canvas.height = h)")
 
 private fun jsDevicePixelRatio(): Double = js("window.devicePixelRatio || 1.0")
+private fun jsDateNow(): Double = js("Date.now()")

@@ -101,10 +101,10 @@ internal actual fun BigBox3DGlSurface(
     val glApi = remember { GlApiImpl() }
     val renderer = remember(atlas) { CuboidRenderer(atlas) }
 
-    renderer.rotationSpeed      = rotationSpeed
-    renderer.glossLevel         = glossLevel
-    renderer.shadowOpacity      = shadowOpacity
-    renderer.shadowFade         = shadowFade
+    renderer.rotationSpeed = rotationSpeed
+    renderer.glossLevel = glossLevel
+    renderer.shadowOpacity = shadowOpacity
+    renderer.shadowFade = shadowFade
     renderer.shadowXOffsetRatio = shadowXOffsetRatio
     renderer.shadowYOffsetRatio = shadowYOffsetRatio
 
@@ -151,8 +151,8 @@ internal actual fun BigBox3DGlSurface(
             .onSizeChanged { size = it }
             .pointerInput(Unit) {
                 detectDragGestures(
-                    onDragStart  = { onGestureActive(true) },
-                    onDragEnd    = { onGestureActive(false) },
+                    onDragStart = { onGestureActive(true) },
+                    onDragEnd = { onGestureActive(false) },
                     onDragCancel = { onGestureActive(false) },
                 ) { _, dragAmount ->
                     renderer.handleTouchDrag(dragAmount.x, dragAmount.y)
@@ -162,10 +162,12 @@ internal actual fun BigBox3DGlSurface(
                 awaitPointerEventScope {
                     while (true) {
                         val event = awaitPointerEvent()
-                        val scrollY = event.changes.fold(Offset.Zero) { acc, c -> acc + c.scrollDelta }.y
+                        val scrollY =
+                            event.changes.fold(Offset.Zero) { acc, c -> acc + c.scrollDelta }.y
                         if (scrollY != 0f) {
-                            scaleFactor.value = (scaleFactor.value * if (scrollY > 0) 0.9f else 1.1f)
-                                .coerceIn(0.5f, 3f)
+                            scaleFactor.value =
+                                (scaleFactor.value * if (scrollY > 0) 0.9f else 1.1f)
+                                    .coerceIn(0.5f, 3f)
                             renderer.zoomFactor = scaleFactor.value
                         }
                     }
@@ -194,6 +196,11 @@ private class GlContext {
     private var fboRbo = 0
     private var fboW = 0
     private var fboH = 0
+
+    // Pre-allocated per FBO size — recreated only when dimensions change, reused every frame.
+    private var readBuf: ByteBuffer = ByteBuffer.allocateDirect(0)
+    private var argbPixels: IntArray = IntArray(0)
+    private var readImage: BufferedImage? = null
 
     fun init() {
         if (isMacOs) {
@@ -229,28 +236,29 @@ private class GlContext {
         glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, fboRbo)
 
         fboW = w; fboH = h
+        readBuf = ByteBuffer.allocateDirect(w * h * 4)
+        argbPixels = IntArray(w * h)
+        readImage = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
         renderer.onSurfaceChanged(glApi, w, h)
     }
 
     fun readFrame(w: Int, h: Int): ImageBitmap {
-        val buf = ByteBuffer.allocateDirect(w * h * 4)
-        glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, buf)
-        val argbPixels = IntArray(w * h)
+        readBuf.clear()
+        glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, readBuf)
         // GL reads bottom-up; flip Y when building the image
         for (y in 0 until h) {
             val srcRow = (h - 1 - y) * w
             for (x in 0 until w) {
                 val i = (srcRow + x) * 4
-                val r = buf.get(i    ).toInt() and 0xFF
-                val g = buf.get(i + 1).toInt() and 0xFF
-                val b = buf.get(i + 2).toInt() and 0xFF
-                val a = buf.get(i + 3).toInt() and 0xFF
+                val r = readBuf.get(i).toInt() and 0xFF
+                val g = readBuf.get(i + 1).toInt() and 0xFF
+                val b = readBuf.get(i + 2).toInt() and 0xFF
+                val a = readBuf.get(i + 3).toInt() and 0xFF
                 argbPixels[y * w + x] = (a shl 24) or (r shl 16) or (g shl 8) or b
             }
         }
-        val image = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
-        image.setRGB(0, 0, w, h, argbPixels, 0, w)
-        return image.toComposeImageBitmap()
+        readImage!!.setRGB(0, 0, w, h, argbPixels, 0, w)
+        return readImage!!.toComposeImageBitmap()
     }
 
     fun destroy() {
@@ -270,10 +278,11 @@ private class GlContext {
 
     private fun destroyFbo() {
         if (fbo != 0) {
-            glDeleteFramebuffers(fbo);     fbo    = 0
-            glDeleteTextures(fboTex);      fboTex = 0
+            glDeleteFramebuffers(fbo); fbo = 0
+            glDeleteTextures(fboTex); fboTex = 0
             glDeleteRenderbuffers(fboRbo); fboRbo = 0
             fboW = 0; fboH = 0
+            readImage = null
         }
     }
 }
@@ -291,7 +300,7 @@ private fun createCglContext(): Long {
             0,
         )
         val pixFmt = stack.pointers(0L)
-        val nPix   = stack.ints(0)
+        val nPix = stack.ints(0)
         CGL.CGLChoosePixelFormat(attrs, pixFmt, nPix)
         val pix = pixFmt.get(0)
         check(pix != 0L) { "CGL: no suitable pixel format" }
@@ -308,7 +317,7 @@ private fun createCglContext(): Long {
 // Used on Linux and Windows only — GLFW does not have the main-thread
 // requirement on those platforms.
 private object GlfwManager {
-    private val lock = Object()
+    private val lock = Any()
     private var initialized = false
 
     fun ensureInit() {

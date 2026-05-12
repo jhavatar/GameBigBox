@@ -163,6 +163,8 @@ class GlApiImpl(private val gl: WebGl2Ctx) : GlApi {
         val loc = handles[location] ?: return
         val n = count * 16
         for (i in 0 until n) jsSet(matrixBuf, i, value[offset + i])
+        // uniformMatrix4fv is synchronous — the browser copies data from the Float32Array
+        // before returning, so reusing matrixBuf for the next call is safe.
         gl.uniformMatrix4fv(loc, transpose, matrixBuf)
     }
 
