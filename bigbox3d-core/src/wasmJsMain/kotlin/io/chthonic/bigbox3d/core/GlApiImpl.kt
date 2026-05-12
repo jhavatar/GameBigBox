@@ -73,8 +73,11 @@ class GlApiImpl(private val gl: WebGl2Ctx) : GlApi {
 
     // Single handle map for all GL objects (shaders, programs, textures, buffers, uniform locs).
     private val handles = mutableMapOf<Int, JsAny>()
-    // Cache (programId, uniformName) → handle so per-frame glGetUniformLocation doesn't leak.
-    private val uniformLocationCache = mutableMapOf<Pair<Int, String>, Int>()
+    // Cache programId → (uniformName → handle) so per-frame glGetUniformLocation doesn't leak
+    // and no Pair is allocated on every lookup.
+    private val uniformLocationCache = mutableMapOf<Int, MutableMap<String, Int>>()
+    // Reusable buffer for matrix uploads — avoids creating a new Float32Array every frame.
+    private val matrixBuf: JsAny = jsFloat32Array(16)
     private var nextId = 1
 
     private fun alloc(obj: JsAny): Int {
@@ -122,10 +125,7 @@ class GlApiImpl(private val gl: WebGl2Ctx) : GlApi {
         gl.getProgramInfoLog(handles[program]) ?: ""
 
     override fun glDeleteProgram(program: Int) {
-        // Evict cached uniform locations for this program.
-        uniformLocationCache.keys.filter { it.first == program }.forEach { key ->
-            uniformLocationCache.remove(key)?.let { handles.remove(it) }
-        }
+        uniformLocationCache.remove(program)?.values?.forEach { handles.remove(it) }
         gl.deleteProgram(handles.remove(program))
     }
 
@@ -153,13 +153,17 @@ class GlApiImpl(private val gl: WebGl2Ctx) : GlApi {
     // --- uniforms ---
 
     override fun glGetUniformLocation(program: Int, name: String): Int =
-        uniformLocationCache.getOrPut(program to name) {
-            gl.getUniformLocation(handles[program], name)?.let { alloc(it) } ?: -1
-        }
+        uniformLocationCache
+            .getOrPut(program) { mutableMapOf() }
+            .getOrPut(name) {
+                gl.getUniformLocation(handles[program], name)?.let { alloc(it) } ?: -1
+            }
 
     override fun glUniformMatrix4fv(location: Int, count: Int, transpose: Boolean, value: FloatArray, offset: Int) {
         val loc = handles[location] ?: return
-        gl.uniformMatrix4fv(loc, transpose, value.toJsFloat32Array(offset, count * 16))
+        val n = count * 16
+        for (i in 0 until n) jsSet(matrixBuf, i, value[offset + i])
+        gl.uniformMatrix4fv(loc, transpose, matrixBuf)
     }
 
     override fun glUniform3f(location: Int, x: Float, y: Float, z: Float) =

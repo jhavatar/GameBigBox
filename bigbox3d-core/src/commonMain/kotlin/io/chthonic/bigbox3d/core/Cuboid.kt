@@ -1,7 +1,6 @@
 package io.chthonic.bigbox3d.core
 
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_ARRAY_BUFFER
-import io.chthonic.bigbox3d.core.GlApi.Companion.GL_BACK
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_BLEND
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_COMPILE_STATUS
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_DEPTH_TEST
@@ -16,8 +15,8 @@ import io.chthonic.bigbox3d.core.GlApi.Companion.GL_STATIC_DRAW
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_TEXTURE_2D
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_TEXTURE_MAG_FILTER
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_TEXTURE_MIN_FILTER
-import io.chthonic.bigbox3d.core.GlApi.Companion.GL_TRIANGLE_STRIP
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_TRIANGLES
+import io.chthonic.bigbox3d.core.GlApi.Companion.GL_TRIANGLE_STRIP
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_UNSIGNED_SHORT
 import io.chthonic.bigbox3d.core.GlApi.Companion.GL_VERTEX_SHADER
 import io.chthonic.bigbox3d.core.RegionFace.BACK
@@ -38,10 +37,35 @@ internal class Cuboid(
 
     // VBO IDs: [vertex, texCoord, normal, index, shadowVertex]
     private val vboIds: IntArray
-
     private val textureId: Int
     private val program: Int
     private val shadowProgram: Int
+
+    // Pre-allocated scratch arrays — reused every frame to avoid GC pressure.
+    private val modelMatrix = FloatArray(16)
+    private val mvpMatrix   = FloatArray(16)
+    private val mvTmp       = FloatArray(4)
+
+    // Box corners as a flat FloatArray (homogeneous coords). Constant for the lifetime
+    // of this Cuboid since halfW/H/D never change. Indexed as corners[v * 4 .. v * 4 + 3].
+    private val corners = floatArrayOf(
+        -halfW, -halfH, -halfD, 1f,   halfW, -halfH, -halfD, 1f,
+        -halfW,  halfH, -halfD, 1f,   halfW,  halfH, -halfD, 1f,
+        -halfW, -halfH,  halfD, 1f,   halfW, -halfH,  halfD, 1f,
+        -halfW,  halfH,  halfD, 1f,   halfW,  halfH,  halfD, 1f,
+    )
+
+    // Cached uniform locations — queried once after program link, reused every frame.
+    private val uMVP: Int
+    private val uModel: Int
+    private val uLightPos: Int
+    private val uViewPos: Int
+    private val uLightColor: Int
+    private val uGloss: Int
+    private val uCenter: Int
+    private val uScale: Int
+    private val uAlpha: Int
+    private val uSmoothStep: Int
 
     init {
         val vertices = floatArrayOf(
@@ -112,7 +136,9 @@ internal class Cuboid(
                 gl_Position = uMVP * aPos;
                 vTex = aTex;
                 vFragPos = vec3(uModel * aPos);
-                vNormal = mat3(transpose(inverse(uModel))) * aNormal;
+                // uModel is always a pure rotation (orthogonal matrix), so inverse(M) == transpose(M)
+                // and the full normal matrix mat3(transpose(inverse(uModel))) simplifies to mat3(uModel).
+                vNormal = mat3(uModel) * aNormal;
             }
         """.trimIndent()
 
@@ -168,6 +194,17 @@ internal class Cuboid(
         program       = gl.createProgram(vShader, fShader)
         shadowProgram = gl.createProgram(shadowVert, shadowFrag)
 
+        uMVP        = gl.glGetUniformLocation(program, "uMVP")
+        uModel      = gl.glGetUniformLocation(program, "uModel")
+        uLightPos   = gl.glGetUniformLocation(program, "uLightPos")
+        uViewPos    = gl.glGetUniformLocation(program, "uViewPos")
+        uLightColor = gl.glGetUniformLocation(program, "uLightColor")
+        uGloss      = gl.glGetUniformLocation(program, "uMaterialGloss")
+        uCenter     = gl.glGetUniformLocation(shadowProgram, "uCenter")
+        uScale      = gl.glGetUniformLocation(shadowProgram, "uScale")
+        uAlpha      = gl.glGetUniformLocation(shadowProgram, "uAlpha")
+        uSmoothStep = gl.glGetUniformLocation(shadowProgram, "uSmoothStep")
+
         val texIds = gl.glGenTextures(1)
         textureId = texIds[0]
         gl.glBindTexture(GL_TEXTURE_2D, textureId)
@@ -188,24 +225,15 @@ internal class Cuboid(
         xOffsetRatio: Float,
         yOffsetRatio: Float,
     ) {
-        val model = FloatArray(16).also {
-            Matrix4.setIdentityM(it, 0)
-            Matrix4.rotateM(it, 0, rotX, 1f, 0f, 0f)
-            Matrix4.rotateM(it, 0, rotY, 0f, 1f, 0f)
-        }
-        val mvp = FloatArray(16).also { Matrix4.multiplyMM(it, 0, vp, 0, model, 0) }
+        Matrix4.setIdentityM(modelMatrix, 0)
+        Matrix4.rotateM(modelMatrix, 0, rotX, 1f, 0f, 0f)
+        Matrix4.rotateM(modelMatrix, 0, rotY, 0f, 1f, 0f)
+        Matrix4.multiplyMM(mvpMatrix, 0, vp, 0, modelMatrix, 0)
 
-        val corners = arrayOf(
-            floatArrayOf(-halfW, -halfH, -halfD, 1f), floatArrayOf(halfW, -halfH, -halfD, 1f),
-            floatArrayOf(-halfW,  halfH, -halfD, 1f), floatArrayOf(halfW,  halfH, -halfD, 1f),
-            floatArrayOf(-halfW, -halfH,  halfD, 1f), floatArrayOf(halfW, -halfH,  halfD, 1f),
-            floatArrayOf(-halfW,  halfH,  halfD, 1f), floatArrayOf(halfW,  halfH,  halfD, 1f),
-        )
         var minX = 1f; var maxX = -1f; var minY = 1f; var maxY = -1f
-        val tmp = FloatArray(4)
-        for (v in corners) {
-            Matrix4.multiplyMV(tmp, 0, mvp, 0, v, 0)
-            val nx = tmp[0] / tmp[3]; val ny = tmp[1] / tmp[3]
+        for (v in 0 until 8) {
+            Matrix4.multiplyMV(mvTmp, 0, mvpMatrix, 0, corners, v * 4)
+            val nx = mvTmp[0] / mvTmp[3]; val ny = mvTmp[1] / mvTmp[3]
             minX = minOf(minX, nx); maxX = maxOf(maxX, nx)
             minY = minOf(minY, ny); maxY = maxOf(maxY, ny)
         }
@@ -220,10 +248,10 @@ internal class Cuboid(
         gl.glEnable(GL_BLEND)
         gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
-        gl.glUniform2f(gl.glGetUniformLocation(shadowProgram, "uCenter"), cx, cy)
-        gl.glUniform2f(gl.glGetUniformLocation(shadowProgram, "uScale"), sx, sy)
-        gl.glUniform1f(gl.glGetUniformLocation(shadowProgram, "uAlpha"), shadowOpacity.coerceIn(0f, 1f))
-        gl.glUniform2f(gl.glGetUniformLocation(shadowProgram, "uSmoothStep"), shadowFadeStartRatio, shadowFadeEndRatio)
+        gl.glUniform2f(uCenter, cx, cy)
+        gl.glUniform2f(uScale, sx, sy)
+        gl.glUniform1f(uAlpha, shadowOpacity.coerceIn(0f, 1f))
+        gl.glUniform2f(uSmoothStep, shadowFadeStartRatio, shadowFadeEndRatio)
 
         gl.glEnableVertexAttribArray(0)
         gl.glBindBuffer(GL_ARRAY_BUFFER, vboIds[4])
@@ -250,19 +278,17 @@ internal class Cuboid(
         gl.glBindBuffer(GL_ARRAY_BUFFER, vboIds[2])
         gl.glVertexAttribPointer(2, 3, GL_FLOAT, false, 0, 0)
 
-        val model = FloatArray(16).also {
-            Matrix4.setIdentityM(it, 0)
-            Matrix4.rotateM(it, 0, rotX, 1f, 0f, 0f)
-            Matrix4.rotateM(it, 0, rotY, 0f, 1f, 0f)
-        }
-        val mvp = FloatArray(16).also { Matrix4.multiplyMM(it, 0, vp, 0, model, 0) }
+        Matrix4.setIdentityM(modelMatrix, 0)
+        Matrix4.rotateM(modelMatrix, 0, rotX, 1f, 0f, 0f)
+        Matrix4.rotateM(modelMatrix, 0, rotY, 0f, 1f, 0f)
+        Matrix4.multiplyMM(mvpMatrix, 0, vp, 0, modelMatrix, 0)
 
-        gl.glUniformMatrix4fv(gl.glGetUniformLocation(program, "uMVP"),   1, false, mvp,   0)
-        gl.glUniformMatrix4fv(gl.glGetUniformLocation(program, "uModel"), 1, false, model, 0)
-        gl.glUniform3f(gl.glGetUniformLocation(program, "uLightPos"),   0f, 0f, cameraZ * 1.6f)
-        gl.glUniform3f(gl.glGetUniformLocation(program, "uViewPos"),    0f, 0f, cameraZ)
-        gl.glUniform3f(gl.glGetUniformLocation(program, "uLightColor"), 1f, 1f, 1f)
-        gl.glUniform1f(gl.glGetUniformLocation(program, "uMaterialGloss"), gloss.coerceIn(0f, 1f))
+        gl.glUniformMatrix4fv(uMVP,        1, false, mvpMatrix,   0)
+        gl.glUniformMatrix4fv(uModel,      1, false, modelMatrix, 0)
+        gl.glUniform3f(uLightPos,   0f, 0f, cameraZ * 1.6f)
+        gl.glUniform3f(uViewPos,    0f, 0f, cameraZ)
+        gl.glUniform3f(uLightColor, 1f, 1f, 1f)
+        gl.glUniform1f(uGloss,      gloss.coerceIn(0f, 1f))
 
         gl.glBindTexture(GL_TEXTURE_2D, textureId)
         gl.glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vboIds[3])
