@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.BottomSheetScaffold
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SheetValue
@@ -21,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.material3.rememberStandardBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -31,10 +31,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import gamebigbox.app.generated.resources.Res
 import io.chthonic.bigbox3d.compose.BigBox3D
+import io.chthonic.bigbox3d.compose.BoxRawImages
+import io.chthonic.bigbox3d.compose.BoxTexture
 import io.chthonic.bigbox3d.compose.BoxTextureUrls
 import io.chthonic.bigbox3d.compose.CapSource
 import io.chthonic.bigbox3d.compose.SideSource
+import io.chthonic.bigbox3d.compose.loadRawImageFromBytes
 import io.chthonic.bigbox3d.core.GlossLevel
 import io.chthonic.bigbox3d.core.RotationSpeed
 import io.chthonic.bigbox3d.core.ShadowFade
@@ -78,8 +82,19 @@ fun MainScreen() {
             )
         }
     ) { innerPadding ->
-        val boxes = remember {
-            listOf(
+        var tesArena by remember { mutableStateOf<BoxRawImages?>(null) }
+        LaunchedEffect(Unit) {
+            tesArena = BoxRawImages(
+                front  = loadRawImageFromBytes(Res.readBytes("files/TESArena_front.webp")),
+                back   = loadRawImageFromBytes(Res.readBytes("files/TESArena_back.webp")),
+                left   = loadRawImageFromBytes(Res.readBytes("files/TESArena_left.webp")),
+                right  = loadRawImageFromBytes(Res.readBytes("files/TESArena_right.webp")),
+                top    = loadRawImageFromBytes(Res.readBytes("files/TESArena_top.webp")),
+                bottom = loadRawImageFromBytes(Res.readBytes("files/TESArena_bottmo.webp")),
+            )
+        }
+        val urlBoxes = remember {
+            listOf<BoxTexture>(
                 BoxTextureUrls(
                     front = "https://bigboxcollection.com/images/textures/front/Doom2.webp",
                     back = "https://bigboxcollection.com/images/textures/back/Doom2.webp",
@@ -165,6 +180,7 @@ fun MainScreen() {
                 ),
             )
         }
+        val boxes = remember(tesArena) { listOfNotNull(tesArena) + urlBoxes }
         val gestureStates =
             remember(boxes.size) { mutableStateListOf(*Array(boxes.size) { false }) }
         LazyColumn(
@@ -175,13 +191,18 @@ fun MainScreen() {
                 .fillMaxSize(),
             userScrollEnabled = !gestureStates.any { it },
         ) {
-            items(count = boxes.size) { idx ->
+            items(
+                count = boxes.size,
+                // Stable keys so prepending tesArena doesn't shift URL box positions
+                // and restart their LaunchedEffects.
+                key = { idx -> boxes[idx].boxKey() },
+            ) { idx ->
                 BigBox3D(
                     modifier = Modifier
                         .height(400.dp)
                         .border(1.dp, Color.Black)
                         .fillMaxWidth(),
-                    textureUrls = boxes[idx],
+                    textures = boxes[idx],
                     rotationSpeed = rotationSpeed,
                     glossLevel = glossLevel,
                     shadowOpacity = shadowOpacity,

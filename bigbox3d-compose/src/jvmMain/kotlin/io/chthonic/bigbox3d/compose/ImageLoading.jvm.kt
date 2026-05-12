@@ -22,8 +22,14 @@ internal actual suspend fun loadRawImageFromUrl(url: String, context: PlatformCo
     } catch (e: Exception) {
         throw ImageLoadException(e)
     }
-    // SkiaImage.makeFromEncoded handles WebP (and all other formats) via bundled
-    // Skia/libwebp — unlike javax.imageio which has no WebP support.
+    return bytesToRawImage(bytes)
+}
+
+actual suspend fun loadRawImageFromBytes(bytes: ByteArray): RawImage = bytesToRawImage(bytes)
+
+// SkiaImage.makeFromEncoded handles WebP (and all other formats) via bundled
+// Skia/libwebp — unlike javax.imageio which has no WebP support.
+private fun bytesToRawImage(bytes: ByteArray): RawImage {
     val src = SkiaImage.makeFromEncoded(bytes) ?: throw ImageLoadException()
     val (w, h) = scaledDimensions(src.width, src.height, MAX_IMAGE_PX)
     val info = ImageInfo(w, h, ColorType.RGBA_8888, ColorAlphaType.UNPREMUL)

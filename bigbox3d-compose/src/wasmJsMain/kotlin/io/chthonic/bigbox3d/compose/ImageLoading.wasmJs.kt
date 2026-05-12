@@ -5,12 +5,24 @@ package io.chthonic.bigbox3d.compose
 import coil3.PlatformContext
 import io.chthonic.bigbox3d.core.RawImage
 import io.chthonic.bigbox3d.network.resolveExternalUrl
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-internal actual suspend fun loadRawImageFromUrl(url: String, context: PlatformContext): RawImage {
-    val imageData = fetchImageData(resolveExternalUrl(url))
+internal actual suspend fun loadRawImageFromUrl(url: String, context: PlatformContext): RawImage =
+    imageDataToRawImage(fetchImageData(resolveExternalUrl(url)))
+
+@OptIn(ExperimentalEncodingApi::class)
+actual suspend fun loadRawImageFromBytes(bytes: ByteArray): RawImage {
+    // Encode as a data URL so the browser's existing fetch → createImageBitmap pipeline
+    // handles all formats (WebP, PNG, JPEG, etc.) without extra JS helpers.
+    val dataUrl = "data:application/octet-stream;base64,${Base64.encode(bytes)}"
+    return imageDataToRawImage(fetchImageData(dataUrl))
+}
+
+private suspend fun imageDataToRawImage(imageData: JsAny): RawImage {
     val width = jsWidth(imageData)
     val height = jsHeight(imageData)
     val pixelCount = width * height
@@ -31,7 +43,7 @@ internal actual suspend fun loadRawImageFromUrl(url: String, context: PlatformCo
 
 /**
  * Suspends until the browser has fetched, decoded, and rasterised [url] into an ImageData object
- * (RGBA, capped at 1024 px on the longest side).
+ * (RGBA, capped at 1024 px on the longest side). Supports https://, data:, and blob: URLs.
  */
 private suspend fun fetchImageData(url: String): JsAny =
     suspendCancellableCoroutine { cont ->

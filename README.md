@@ -11,9 +11,10 @@ KMP library with targets (currently): Android, Web, JVM/Desktop. See more info i
 implementation("io.github.jhavatar:bigbox3d-compose:1.0.1")
 ```
 
+**From URLs** (loaded at runtime):
 ```kotlin
 BigBox3D(
-    textureUrls = BoxTextureUrls(
+    textures = BoxTextureUrls(
         front = "https://…/front.webp",
         back  = "https://…/back.webp",
         // Explicit left + right:
@@ -26,10 +27,29 @@ BigBox3D(
         // Or solid color (auto-derived from front edge average when color not supplied):
         // caps = CapSource.ColorFill(),
     ),
+    rotationSpeed = RotationSpeed.VERY_SLOW, // NONE / VERY_SLOW / SLOW / NORMAL / FAST / VERY_FAST
+)
+```
+
+**From bundled resources** (Compose Multiplatform `composeResources/files/`):
+```kotlin
+// In a coroutine / LaunchedEffect
+BigBox3D(
+    textures = BoxRawImages(
+        front  = loadRawImageFromBytes(Res.readBytes("files/front.webp")),
+        back   = loadRawImageFromBytes(Res.readBytes("files/back.webp")),
+        left   = loadRawImageFromBytes(Res.readBytes("files/left.webp")),
+        right  = loadRawImageFromBytes(Res.readBytes("files/right.webp")),
+        top    = loadRawImageFromBytes(Res.readBytes("files/top.webp")),
+        bottom = loadRawImageFromBytes(Res.readBytes("files/bottom.webp")),
+    ),
 )
 ```
 
 `edgeAverageColor()` is also available as a `RawImage` extension if you want to derive a color manually after loading an image.
+
+> [!NOTE]
+> Images used were scraped from [Big Box Collection](https://bigboxcollection.com).
 
 ## Original legacy Android only library
 ### How to get it in your build

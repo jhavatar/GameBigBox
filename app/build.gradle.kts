@@ -30,6 +30,7 @@ kotlin {
             implementation(libs.foundation)
             implementation(libs.ui)
             implementation(libs.material3)
+            implementation(compose.components.resources)
         }
         androidMain.dependencies {
             implementation(libs.androidx.core.ktx)

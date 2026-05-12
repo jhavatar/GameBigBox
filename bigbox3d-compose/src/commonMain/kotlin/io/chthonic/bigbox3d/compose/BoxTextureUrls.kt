@@ -5,6 +5,12 @@ import io.chthonic.bigbox3d.core.RawImage
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 
+/** Base type accepted by [BigBox3D]. Either [BoxTextureUrls] or [BoxRawImages]. */
+sealed interface BoxTexture {
+    /** Stable, unique key for this instance — use as a LazyColumn item key. */
+    fun boxKey(): String
+}
+
 sealed interface SideSource {
     /** Explicit left and right face URLs. */
     data class Explicit(val left: String, val right: String) : SideSource
@@ -26,7 +32,9 @@ data class BoxTextureUrls(
     val back: String,
     val sides: SideSource,
     val caps: CapSource,
-) {
+) : BoxTexture {
+    override fun boxKey(): String = "$front|$back|${sides}|${caps}"
+
     val supportsFullXAxisRotation: Boolean = true
 
     /** Returns images in atlas order: [front, back, left, right, top, bottom]. */
@@ -82,4 +90,32 @@ private fun colorFillRawImage(color: Color): RawImage {
     val b = (color.blue * 255f + 0.5f).toInt().coerceIn(0, 255).toByte()
     val a = (color.alpha * 255f + 0.5f).toInt().coerceIn(0, 255).toByte()
     return RawImage(1, 1, byteArrayOf(r, g, b, a))
+}
+
+/**
+ * Pre-loaded face images for a box — use when images come from bundled resources
+ * or any other source where bytes are already available. No URL loading is performed.
+ *
+ * Use [loadRawImageFromBytes] to decode resource bytes (e.g. from Compose
+ * Multiplatform's `Res.readBytes()`) into [RawImage] on any platform.
+ */
+data class BoxRawImages(
+    val front: RawImage,
+    val back: RawImage,
+    val left: RawImage,
+    val right: RawImage,
+    val top: RawImage,
+    val bottom: RawImage,
+) : BoxTexture {
+    // Assigned at construction outside the primary constructor so it is excluded
+    // from data class equals/hashCode/copy — two BoxRawImages with identical pixels
+    // remain equal but still produce distinct keys.
+    private val id: Int = nextId()
+
+    override fun boxKey(): String = "raw_$id"
+
+    companion object {
+        private var nextIdValue = 0
+        private fun nextId() = ++nextIdValue
+    }
 }

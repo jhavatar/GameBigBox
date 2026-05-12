@@ -156,15 +156,24 @@ KMP Compose widget layer. Depends on `:bigbox3d-core` via `api()` (so core types
 
 | Source set | Contents |
 |------------|----------|
-| `commonMain` | `BigBox3D` composable (public API); `BoxTextureUrls` data class + `SideSource` sealed interface (`Explicit`, `Spine`, `ColorFill`) + `CapSource` sealed interface (`Explicit`, `ColorFill`); `RawImageExt.kt` (`edgeAverageColor()` — averages edge pixels of a `RawImage` to infer background color); `expect BigBox3DGlSurface`; `expect loadRawImageFromUrl`; `expect val ioDispatcher` |
+| `commonMain` | `BigBox3D` composable (public API — takes `textures: BoxTexture`); `BoxTexture` sealed interface with `boxKey(): String` (stable LazyColumn key); `BoxTextureUrls : BoxTexture` (URL-based, supports `SideSource`/`CapSource`); `BoxRawImages : BoxTexture` (pre-loaded faces, for bundled resources — see `loadRawImageFromBytes`); `SideSource` sealed interface (`Explicit`, `Spine`, `ColorFill`); `CapSource` sealed interface (`Explicit`, `ColorFill`); `RawImageExt.kt` (`edgeAverageColor()` — averages edge pixels of a `RawImage` to infer background color); `expect BigBox3DGlSurface`; `expect loadRawImageFromUrl`; `expect loadRawImageFromBytes`; `expect val ioDispatcher` |
 | `androidMain` | `actual BigBox3DGlSurface` — `GLSurfaceView` in `AndroidView`, bridges `Renderer` callbacks to `CuboidRenderer`; gestures handled via `Modifier.pointerInput` (horizontal drag = rotate, vertical passes to `LazyColumn` for scroll, pinch = zoom); `actual loadRawImageFromUrl` — Coil 3 → `BitmapImage` → ARGB→RGBA extraction; `actual ioDispatcher = Dispatchers.IO`; internet permission in manifest |
 | `wasmJsMain` | `actual BigBox3DGlSurface` — creates a WebGL `<canvas>` appended to `<html>` (not `<body>`) with `position:fixed; pointer-events:none; z-index:1`; gestures handled via `Modifier.pointerInput` on the Box (drag = rotate; scroll = LazyColumn; scroll over stationary box = zoom via 300 ms debounce); `onSurfaceCreated` called after first `jsResizeCanvas` due to WebGL context-reset behaviour; `localToWindow(Offset.Zero)` + `coords.size` gives full composable dimensions during scroll; `actual loadRawImageFromUrl` — browser `fetch` → `createImageBitmap` → `OffscreenCanvas` → `getImageData` pixels; `actual ioDispatcher = Dispatchers.Default` |
 | `jvmMain` | `actual BigBox3DGlSurface` — CGL headless context (macOS) or GLFW hidden window (Linux/Windows) → FBO → `glReadPixels` → Y-flip → `BufferedImage.toComposeImageBitmap()`, displayed via Compose `Image`; render loop via `withFrameNanos`; drag/scroll gestures via `pointerInput`; VAO bound before `onSurfaceCreated`; `actual loadRawImageFromUrl` — Skiko `Image.makeFromEncoded` (handles WebP) → `Surface` → pixel readback; `actual ioDispatcher = Dispatchers.IO` |
 
 **Data flow in `BigBox3D`:**
-1. `LaunchedEffect` loads URLs → `List<RawImage>` on `ioDispatcher` (capped at 1024 px). `SideSource.Spine` generates the right face by flipping the spine image horizontally. `SideSource.ColorFill` / `CapSource.ColorFill` generate solid-color 1×1 images (auto-derived from the front image's edge average when no color is supplied).
-2. Builds `BoxTextureAtlas` on `Dispatchers.Default` (`buildAtlas2x3` + dimension derivation). Depth is inferred in priority order: side image aspect ratio → top image aspect ratio → hardcoded fallback `0.18f`.
-3. Passes atlas to `BigBox3DGlSurface` (expect/actual); shows `CircularProgressIndicator` while loading. `supportsFullXAxisRotation` is always `true` — all face combinations produce real content.
+1. `LaunchedEffect(textures)` resolves face images into `List<RawImage>`: for `BoxTextureUrls`, all URL fetches are fired concurrently (`async`/`coroutineScope`) on `ioDispatcher`; for `BoxRawImages`, the pre-loaded images are used directly (no network). `SideSource.Spine` generates the right face by flipping the spine image horizontally. `SideSource.ColorFill` / `CapSource.ColorFill` generate solid-color 1×1 images (auto-derived from the front image's edge average when no color is supplied — computed lazily so `edgeAverageColor()` runs at most once per load).
+2. Builds `BoxTextureAtlas` on `Dispatchers.Default` (`buildAtlas2x3` + dimension derivation). Depth inferred in priority order: side image aspect ratio → top image aspect ratio → hardcoded fallback `0.18f`. `CancellationException` is re-thrown (not swallowed) so Compose can restart the effect on key change.
+3. Passes atlas to `BigBox3DGlSurface` (expect/actual); shows `CircularProgressIndicator` while loading. `supportsFullXAxisRotation` is always `true`.
+
+**Using bundled resources with `BoxRawImages`:** Place images in `src/commonMain/composeResources/files/` and add `compose.components.resources` to `commonMain` dependencies. Then:
+```kotlin
+BoxRawImages(
+    front = loadRawImageFromBytes(Res.readBytes("files/front.webp")),
+    ...
+)
+```
+`Res` is the generated per-module object in `<packageName>.generated.resources`; import it explicitly (it is NOT in `org.jetbrains.compose.resources`). `loadRawImageFromBytes` decodes on all platforms: Android via `BitmapFactory`, JVM via Skiko, wasmJs via `data:` URL + browser `createImageBitmap`.
 
 **Web GL surface (`BigBox3DGlSurface.wasmJs.kt`):**
 - A WebGL2 `<canvas>` is appended to `<html>` (not `<body>`) with `position:fixed; pointer-events:none; z-index:1`. It must go to `<html>` because Compose MP 1.10.x sets `position:relative; overflow:hidden` on `<body>`, which causes a Firefox bug where `position:fixed` children have `offsetWidth=0` and are invisible.
@@ -175,9 +184,9 @@ KMP Compose widget layer. Depends on `:bigbox3d-core` via `api()` (so core types
 - Scroll-wheel zoom uses a 300 ms debounce: if scroll events arrive faster than 300 ms apart the box is deemed "in list-scroll motion" and zoom is suppressed; once quiescent, the next wheel tick zooms.
 
 **Web image loading (`ImageLoading.wasmJs.kt`):**
-- Entirely browser-native: `fetch` → `.blob()` → `createImageBitmap` → `OffscreenCanvas` → `getImageData`
+- Entirely browser-native: `fetch` → `.blob()` → `createImageBitmap` → `OffscreenCanvas` → `getImageData`. Also supports `data:` URLs (used by `loadRawImageFromBytes` on wasmJs).
 - Promise-to-coroutine bridge via `suspendCancellableCoroutine` + `js("promise.then(onFulfilled, onRejected)")`
-- `Uint8ClampedArray` pixel values (0–255) extracted as `Int` via `js("data.data[i]")` and reinterpreted as signed `Byte` (same bit pattern) for `RawImage`
+- Pixel extraction packs 4 RGBA bytes into one `Int` per Wasm→JS bridge crossing (`jsGetPixelRgba`) — 1M crossings for a 1024×1024 image instead of 4M. JS `<<` operates on signed 32-bit ints; `ushr` in Kotlin extracts unsigned bytes correctly.
 - No Coil dependency on web
 
 **`ioDispatcher` expect/actual:** `Dispatchers.IO` does not exist on Kotlin/wasmJs (JS is single-threaded). The `expect val ioDispatcher` resolves to `Dispatchers.IO` on Android and JVM, and `Dispatchers.Default` on web.
@@ -186,7 +195,7 @@ KMP Compose widget layer. Depends on `:bigbox3d-core` via `api()` (so core types
 
 | Source set | Contents |
 |------------|----------|
-| `commonMain` | `MainScreen`, `SettingsPanel`, and all UI composables — shared between Android, web, and desktop |
+| `commonMain` | `MainScreen`, `SettingsPanel`, and all UI composables — shared between Android, web, and desktop. Uses `compose.components.resources` for bundled images in `composeResources/files/`. `LazyColumn` items use `BoxTexture.boxKey()` as stable keys to prevent state reuse when the list is dynamically prepended. |
 | `androidMain` | `MainActivity` (`ComponentActivity` entry point, wraps `MainScreen` in `GameBigBoxTheme`); `@Preview` composable; `GameBigBoxTheme` with Android dynamic colors |
 | `wasmJsMain` | `main()` — web entry point using `ComposeViewport(document.body!!)` wrapped in `MaterialTheme` |
 | `wasmJsMain/resources` | `index.html` — loads `app.js` (Skiko is bundled into `app.js` by webpack in Compose MP 1.10.x; the old separate `skiko.js` tag was removed) |

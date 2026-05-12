@@ -1,6 +1,7 @@
 package io.chthonic.bigbox3d.compose
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import coil3.BitmapImage
 import java.nio.ByteBuffer
 import coil3.PlatformContext
@@ -22,6 +23,20 @@ internal actual suspend fun loadRawImageFromUrl(url: String, context: PlatformCo
     val result = SingletonImageLoader.get(context).execute(request)
     if (result !is SuccessResult) throw ImageLoadException(cause = null)
     return (result.image as BitmapImage).bitmap.toRawImage()
+}
+
+actual suspend fun loadRawImageFromBytes(bytes: ByteArray): RawImage {
+    val raw = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        ?: throw ImageLoadException()
+    val scale = MAX_IMAGE_PX.toFloat() / maxOf(raw.width, raw.height)
+    val scaled = if (scale >= 1f) raw
+    else Bitmap.createScaledBitmap(
+        raw,
+        (raw.width * scale).toInt().coerceAtLeast(1),
+        (raw.height * scale).toInt().coerceAtLeast(1),
+        true,
+    )
+    return scaled.toRawImage()
 }
 
 private fun Bitmap.toRawImage(): RawImage {

@@ -25,8 +25,9 @@ import kotlinx.coroutines.withContext
 /**
  * Compose Multiplatform widget that renders a 3D PC game big box.
  *
- * @param textureUrls textures for each face of the box
- * @param autoRotate continuously rotate the box when true
+ * @param textures face textures — either [BoxTextureUrls] (loaded from URLs) or
+ *   [BoxRawImages] (pre-loaded, e.g. from bundled resources via [loadRawImageFromBytes])
+ * @param rotationSpeed auto-rotation speed; [RotationSpeed.NONE] stops rotation
  * @param glossLevel surface glossiness
  * @param shadowOpacity opacity of the projected shadow
  * @param shadowFade softness of the shadow falloff
@@ -36,7 +37,7 @@ import kotlinx.coroutines.withContext
  */
 @Composable
 fun BigBox3D(
-    textureUrls: BoxTextureUrls,
+    textures: BoxTexture,
     modifier: Modifier = Modifier,
     rotationSpeed: RotationSpeed = RotationSpeed.VERY_SLOW,
     glossLevel: GlossLevel = GlossLevel.SEMI_GLOSS,
@@ -49,20 +50,31 @@ fun BigBox3D(
     val platformContext = LocalPlatformContext.current
     var atlas by remember { mutableStateOf<BoxTextureAtlas?>(null) }
 
-    LaunchedEffect(textureUrls) {
+    LaunchedEffect(textures) {
         atlas = null
         try {
-            val rawImages = withContext(ioDispatcher) {
-                textureUrls.toRawImages { url -> loadRawImageFromUrl(url, platformContext) }
+            val rawImages = when (textures) {
+                is BoxTextureUrls -> withContext(ioDispatcher) {
+                    textures.toRawImages { url -> loadRawImageFromUrl(url, platformContext) }
+                }
+                is BoxRawImages -> listOf(
+                    textures.front, textures.back,
+                    textures.left,  textures.right,
+                    textures.top,   textures.bottom,
+                )
             }
             atlas = withContext(Dispatchers.Default) {
-                val dims = when {
-                    textureUrls.sides !is SideSource.ColorFill ->
-                        cuboidDimensions(front = rawImages[0], side = rawImages[2])
-                    textureUrls.caps !is CapSource.ColorFill ->
-                        cuboidDimensionsFromTop(front = rawImages[0], top = rawImages[4])
-                    else ->
-                        cuboidDimensions(front = rawImages[0], depthRatio = 0.18f)
+                val dims = when (textures) {
+                    is BoxTextureUrls -> when {
+                        textures.sides !is SideSource.ColorFill ->
+                            cuboidDimensions(front = rawImages[0], side = rawImages[2])
+                        textures.caps !is CapSource.ColorFill ->
+                            cuboidDimensionsFromTop(front = rawImages[0], top = rawImages[4])
+                        else ->
+                            cuboidDimensions(front = rawImages[0], depthRatio = 0.18f)
+                    }
+                    // BoxRawImages always provides all 6 faces; derive depth from the side image.
+                    is BoxRawImages -> cuboidDimensions(front = rawImages[0], side = rawImages[2])
                 }
                 val meta = rawImages.buildAtlas2x3(
                     halfW = dims.halfWidth,
@@ -72,13 +84,16 @@ fun BigBox3D(
                 BoxTextureAtlas(
                     image = meta.image,
                     regions = meta.regions,
-                    supportsFullXAxisRotation = textureUrls.supportsFullXAxisRotation,
+                    supportsFullXAxisRotation = true,
                     halfWidth = dims.halfWidth,
                     halfHeight = dims.halfHeight,
                     halfDepth = dims.halfDepth,
                 )
             }
         } catch (e: Exception) {
+            // Never swallow coroutine cancellation — propagate it so Compose can
+            // restart the effect with the new key if textures changed.
+            if (e is kotlinx.coroutines.CancellationException) throw e
             atlas = null
         }
     }
