@@ -164,7 +164,7 @@ KMP Compose widget layer. Depends on `:bigbox3d-core` via `api()` (so core types
 **Data flow in `BigBox3D`:**
 1. `LaunchedEffect(textures)` resolves face images into `List<RawImage>`: for `BoxTextureUrls`, all URL fetches are fired concurrently (`async`/`coroutineScope`) on `ioDispatcher`; for `BoxRawImages`, the pre-loaded images are used directly (no network). `SideSource.Spine` generates the right face by flipping the spine image horizontally. `SideSource.ColorFill` / `CapSource.ColorFill` generate solid-color 1×1 images (auto-derived from the front image's edge average when no color is supplied — computed lazily so `edgeAverageColor()` runs at most once per load).
 2. Builds `BoxTextureAtlas` on `Dispatchers.Default` (`buildAtlas2x3` + dimension derivation). Depth inferred in priority order: side image aspect ratio → top image aspect ratio → hardcoded fallback `0.18f`. `CancellationException` is re-thrown (not swallowed) so Compose can restart the effect on key change.
-3. Passes atlas to `BigBox3DGlSurface` (expect/actual); shows `CircularProgressIndicator` while loading. `supportsFullXAxisRotation` is always `true`.
+3. Passes atlas to `BigBox3DGlSurface` (expect/actual); shows `loadingContent` composable (default: `CircularProgressIndicator`) while loading. `supportsFullXAxisRotation` is always `true`.
 
 **Using bundled resources with `BoxRawImages`:** Place images in `src/commonMain/composeResources/files/` and add `compose.components.resources` to `commonMain` dependencies. Then:
 ```kotlin

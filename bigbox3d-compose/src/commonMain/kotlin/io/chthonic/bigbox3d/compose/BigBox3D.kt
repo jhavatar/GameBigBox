@@ -34,6 +34,7 @@ import kotlinx.coroutines.withContext
  * @param shadowXOffsetRatio shadow center X offset relative to box width (+right)
  * @param shadowYOffsetRatio shadow center Y offset relative to box height (+up)
  * @param onGestureActive fires when a touch gesture starts or ends
+ * @param loadingContent composable shown while the atlas is being built; defaults to [CircularProgressIndicator]
  */
 @Composable
 fun BigBox3D(
@@ -46,6 +47,7 @@ fun BigBox3D(
     shadowXOffsetRatio: Float = 0f,
     shadowYOffsetRatio: Float = 0f,
     onGestureActive: (Boolean) -> Unit = {},
+    loadingContent: @Composable () -> Unit = { CircularProgressIndicator() },
 ) {
     val platformContext = LocalPlatformContext.current
     var atlas by remember { mutableStateOf<BoxTextureAtlas?>(null) }
@@ -111,6 +113,6 @@ fun BigBox3D(
             onGestureActive = onGestureActive,
         )
     } ?: Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        CircularProgressIndicator()
+        loadingContent()
     }
 }
