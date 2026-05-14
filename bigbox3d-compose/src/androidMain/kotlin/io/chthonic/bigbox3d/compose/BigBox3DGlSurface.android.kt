@@ -27,6 +27,7 @@ import kotlin.math.hypot
 internal actual fun BigBox3DGlSurface(
     atlas: BoxTextureAtlas,
     modifier: Modifier,
+    paused: Boolean,
     rotationSpeed: RotationSpeed,
     glossLevel: GlossLevel,
     shadowOpacity: ShadowOpacity,
@@ -61,6 +62,7 @@ internal actual fun BigBox3DGlSurface(
             }.also { glViewRef.value = it }
         },
         update = { glView ->
+            if (paused) glView.onPause() else glView.onResume()
             glView.queueEvent {
                 renderer.glossLevel        = glossLevel
                 renderer.rotationSpeed     = rotationSpeed

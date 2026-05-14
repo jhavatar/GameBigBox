@@ -33,6 +33,7 @@ import kotlinx.coroutines.withContext
  * @param shadowFade softness of the shadow falloff
  * @param shadowXOffsetRatio shadow center X offset relative to box width (+right)
  * @param shadowYOffsetRatio shadow center Y offset relative to box height (+up)
+ * @param paused when true the render loop is suspended — no GPU work, GL state preserved
  * @param onGestureActive fires when a touch gesture starts or ends
  * @param loadingContent composable shown while the atlas is being built; defaults to [CircularProgressIndicator]
  */
@@ -40,6 +41,7 @@ import kotlinx.coroutines.withContext
 fun BigBox3D(
     textures: BoxTexture,
     modifier: Modifier = Modifier,
+    paused: Boolean = false,
     rotationSpeed: RotationSpeed = RotationSpeed.VERY_SLOW,
     glossLevel: GlossLevel = GlossLevel.SEMI_GLOSS,
     shadowOpacity: ShadowOpacity = ShadowOpacity.STRONG,
@@ -104,6 +106,7 @@ fun BigBox3D(
         BigBox3DGlSurface(
             atlas = a,
             modifier = modifier,
+            paused = paused,
             rotationSpeed = rotationSpeed,
             glossLevel = glossLevel,
             shadowOpacity = shadowOpacity,

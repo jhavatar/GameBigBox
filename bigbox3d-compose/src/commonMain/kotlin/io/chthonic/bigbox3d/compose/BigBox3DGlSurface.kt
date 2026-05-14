@@ -12,6 +12,7 @@ import io.chthonic.bigbox3d.core.ShadowOpacity
 internal expect fun BigBox3DGlSurface(
     atlas: BoxTextureAtlas,
     modifier: Modifier,
+    paused: Boolean,
     rotationSpeed: RotationSpeed,
     glossLevel: GlossLevel,
     shadowOpacity: ShadowOpacity,

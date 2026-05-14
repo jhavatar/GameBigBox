@@ -48,6 +48,40 @@ BigBox3D(
 
 `edgeAverageColor()` is also available as a `RawImage` extension if you want to derive a color manually after loading an image.
 
+## BigBox3DProgress — loading indicator
+
+`BigBox3DProgress` is a convenience wrapper that uses `BigBox3D` as a loading spinner. It stays permanently in the composition so its GL state and texture atlas survive show/hide cycles — no reload on every appearance.
+
+```kotlin
+BigBox3DProgress(
+    textures = spinnerTextures,
+    visible = isLoading,
+)
+```
+
+When `visible` becomes `false` the render loop pauses immediately (zero GPU cost), the last frame fades out, and the composable collapses to zero size once the fade finishes.
+
+### Reusing across screens with `movableContentOf`
+
+Because `BigBox3DProgress` stays permanently composed, its GL state (loaded textures, atlas) is preserved as long as it remains in the composition tree. To reuse the **same instance** — and therefore the same already-loaded atlas — across multiple screens without reloading, wrap it in `movableContentOf` at the call site:
+
+```kotlin
+// Create once at the root of your navigation
+val progressIndicator = remember {
+    movableContentOf {
+        BigBox3DProgress(textures = spinnerTextures, visible = isLoading)
+    }
+}
+
+// Place it in whichever screen is active — state is carried across, not recreated
+when (currentScreen) {
+    Screen.Library    -> { LibraryScreen(...);    progressIndicator() }
+    Screen.GameDetail -> { GameDetailScreen(...); progressIndicator() }
+}
+```
+
+`movableContentOf` tells Compose to **move** the existing composition subtree (including GL context and atlas) rather than destroy and recreate it when it appears at a different location in the tree. Without it, navigating between screens would recreate `BigBox3DProgress` from scratch and reload the textures each time.
+
 > [!NOTE]
 > Images used were scraped from [Big Box Collection](https://bigboxcollection.com).
 

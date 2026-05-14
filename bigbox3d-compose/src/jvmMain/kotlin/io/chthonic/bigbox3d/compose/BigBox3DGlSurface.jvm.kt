@@ -90,6 +90,7 @@ private val isMacOs = System.getProperty("os.name")?.lowercase()?.startsWith("ma
 internal actual fun BigBox3DGlSurface(
     atlas: BoxTextureAtlas,
     modifier: Modifier,
+    paused: Boolean,
     rotationSpeed: RotationSpeed,
     glossLevel: GlossLevel,
     shadowOpacity: ShadowOpacity,
@@ -114,7 +115,7 @@ internal actual fun BigBox3DGlSurface(
 
     val ctx = remember { GlContext() }
 
-    LaunchedEffect(renderer) {
+    LaunchedEffect(renderer, paused) {
         var vao = 0
         withContext(ctx.dispatcher) {
             ctx.init()
@@ -123,6 +124,7 @@ internal actual fun BigBox3DGlSurface(
             glBindVertexArray(vao)
             renderer.onSurfaceCreated(glApi)
         }
+        if (paused) return@LaunchedEffect
         try {
             while (true) {
                 withFrameNanos { }

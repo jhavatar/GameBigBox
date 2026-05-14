@@ -27,6 +27,7 @@ import io.chthonic.bigbox3d.core.WebGl2Ctx
 internal actual fun BigBox3DGlSurface(
     atlas: BoxTextureAtlas,
     modifier: Modifier,
+    paused: Boolean,
     rotationSpeed: RotationSpeed,
     glossLevel: GlossLevel,
     shadowOpacity: ShadowOpacity,
@@ -72,7 +73,8 @@ internal actual fun BigBox3DGlSurface(
         }
     }
 
-    LaunchedEffect(renderer) {
+    LaunchedEffect(renderer, paused) {
+        if (paused) return@LaunchedEffect
         while (true) {
             withFrameNanos { }
             if (glReady.value) renderer.onDrawFrame(glApi)

@@ -156,7 +156,7 @@ KMP Compose widget layer. Depends on `:bigbox3d-core` via `api()` (so core types
 
 | Source set | Contents |
 |------------|----------|
-| `commonMain` | `BigBox3D` composable (public API — takes `textures: BoxTexture`); `BoxTexture` sealed interface with `boxKey(): String` (stable LazyColumn key); `BoxTextureUrls : BoxTexture` (URL-based, supports `SideSource`/`CapSource`); `BoxRawImages : BoxTexture` (pre-loaded faces, for bundled resources — see `loadRawImageFromBytes`); `SideSource` sealed interface (`Explicit`, `Spine`, `ColorFill`); `CapSource` sealed interface (`Explicit`, `ColorFill`); `RawImageExt.kt` (`edgeAverageColor()` — averages edge pixels of a `RawImage` to infer background color); `expect BigBox3DGlSurface`; `expect loadRawImageFromUrl`; `expect loadRawImageFromBytes`; `expect val ioDispatcher` |
+| `commonMain` | \`BigBox3D\` composable (public API — takes \`textures: BoxTexture\`, \`paused: Boolean = false\`); \`BigBox3DProgress\` composable (loading-indicator wrapper — see below); `BoxTexture` sealed interface with `boxKey(): String` (stable LazyColumn key); `BoxTextureUrls : BoxTexture` (URL-based, supports `SideSource`/`CapSource`); `BoxRawImages : BoxTexture` (pre-loaded faces, for bundled resources — see `loadRawImageFromBytes`); `SideSource` sealed interface (`Explicit`, `Spine`, `ColorFill`); `CapSource` sealed interface (`Explicit`, `ColorFill`); `RawImageExt.kt` (`edgeAverageColor()` — averages edge pixels of a `RawImage` to infer background color); `expect BigBox3DGlSurface`; `expect loadRawImageFromUrl`; `expect loadRawImageFromBytes`; `expect val ioDispatcher` |
 | `androidMain` | `actual BigBox3DGlSurface` — `GLSurfaceView` in `AndroidView`, bridges `Renderer` callbacks to `CuboidRenderer`; gestures handled via `Modifier.pointerInput` (horizontal drag = rotate, vertical passes to `LazyColumn` for scroll, pinch = zoom); `actual loadRawImageFromUrl` — Coil 3 → `BitmapImage` → ARGB→RGBA extraction; `actual ioDispatcher = Dispatchers.IO`; internet permission in manifest |
 | `wasmJsMain` | `actual BigBox3DGlSurface` — creates a WebGL `<canvas>` appended to `<html>` (not `<body>`) with `position:fixed; pointer-events:none; z-index:1`; gestures handled via `Modifier.pointerInput` on the Box (drag = rotate; scroll = LazyColumn; scroll over stationary box = zoom via 300 ms debounce); `onSurfaceCreated` called after first `jsResizeCanvas` due to WebGL context-reset behaviour; `localToWindow(Offset.Zero)` + `coords.size` gives full composable dimensions during scroll; `actual loadRawImageFromUrl` — browser `fetch` → `createImageBitmap` → `OffscreenCanvas` → `getImageData` pixels; `actual ioDispatcher = Dispatchers.Default` |
 | `jvmMain` | `actual BigBox3DGlSurface` — CGL headless context (macOS) or GLFW hidden window (Linux/Windows) → FBO → `glReadPixels` → Y-flip → `BufferedImage.toComposeImageBitmap()`, displayed via Compose `Image`; render loop via `withFrameNanos`; drag/scroll gestures via `pointerInput`; VAO bound before `onSurfaceCreated`; `actual loadRawImageFromUrl` — Skiko `Image.makeFromEncoded` (handles WebP) → `Surface` → pixel readback; `actual ioDispatcher = Dispatchers.IO` |
@@ -204,6 +204,31 @@ BoxRawImages(
 ### `:opengl3` (legacy)
 
 Self-contained Android-only implementation using `android.graphics.Bitmap` and `GLUtils.texImage2D`. Still publishable to JitPack as `com.github.jhavatar.gamebigbox:opengl3`. Not used by `:app` any more.
+
+## BigBox3DProgress — loading indicator composable
+
+`BigBox3DProgress` wraps `BigBox3D` for use as a reusable loading spinner. It stays permanently in the composition so the GL state and texture atlas survive show/hide cycles with no reload.
+
+**Key behaviours:**
+- `paused = !visible` — render loop stops immediately when hidden (zero GPU cost)
+- Alpha fades in/out over `fadeDurationMs` (default 300 ms) using `updateTransition`
+- Size collapses to `0.dp` only after the fade-out completes (`transition.currentState != transition.targetState` guards the size) — no layout space or touch interception when invisible
+- Defaults: `RotationSpeed.VERY_FAST`, `ShadowOpacity.STRONG`, `ShadowFade.REALISTIC`, `size = 200.dp`
+
+**`movableContentOf` — reusing the same instance across screens:**
+
+Compose identifies composables by their position in the tree. Navigating between screens normally destroys and recreates `BigBox3DProgress`, reloading the atlas on every appearance. `movableContentOf` tells Compose to carry the existing composition subtree (GL context, atlas, coroutines) to the new location instead of recreating it:
+
+```kotlin
+val spinner = remember {
+    movableContentOf {
+        BigBox3DProgress(textures = spinnerTextures, visible = isLoading)
+    }
+}
+// Place spinner() wherever needed — one atlas load, zero reloads on navigation
+```
+
+`movableContentOf` must be created at the call site (e.g. in the root navigation composable). If it were hidden inside `BigBox3DProgress` itself, the wrapper node would be the fixed point in the tree and the move benefit would be lost.
 
 ## Visual Config Enums (in `:bigbox3d-core`)
 
