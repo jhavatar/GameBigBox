@@ -2,6 +2,7 @@ package io.chthonic.gamebigbox
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -61,6 +62,25 @@ fun MainScreen() {
     var shadowY by remember { mutableFloatStateOf(0f) }
     var rotationSpeed by remember { mutableStateOf(RotationSpeed.VERY_SLOW) }
 
+    // Loaded here (not inside the content lambda) so sheetContent can also reference it.
+    var tesArena by remember { mutableStateOf<BoxRawImages?>(null) }
+    LaunchedEffect(Unit) {
+        tesArena = BoxRawImages(
+            front  = loadRawImageFromBytes(Res.readBytes("files/TESArena_front.webp")),
+            back   = loadRawImageFromBytes(Res.readBytes("files/TESArena_back.webp")),
+            left   = loadRawImageFromBytes(Res.readBytes("files/TESArena_left.webp")),
+            right  = loadRawImageFromBytes(Res.readBytes("files/TESArena_right.webp")),
+            top    = loadRawImageFromBytes(Res.readBytes("files/TESArena_top.webp")),
+            bottom = loadRawImageFromBytes(Res.readBytes("files/TESArena_bottmo.webp")),
+        )
+    }
+
+    // Pool of 2 BigBox3DProgress instances using TES Arena textures.
+    // Created once tesArena is loaded; each slot is assigned to whichever LazyColumn
+    // items are currently loading so the spinner atlas stays warm between handoffs.
+    val progressPool = rememberBigBox3DProgressPool(textures = tesArena)
+    progressPool.ParkingSpots()
+
     BottomSheetScaffold(
         modifier = Modifier.fillMaxSize(),
         scaffoldState = scaffoldState,
@@ -82,17 +102,6 @@ fun MainScreen() {
             )
         }
     ) { innerPadding ->
-        var tesArena by remember { mutableStateOf<BoxRawImages?>(null) }
-        LaunchedEffect(Unit) {
-            tesArena = BoxRawImages(
-                front  = loadRawImageFromBytes(Res.readBytes("files/TESArena_front.webp")),
-                back   = loadRawImageFromBytes(Res.readBytes("files/TESArena_back.webp")),
-                left   = loadRawImageFromBytes(Res.readBytes("files/TESArena_left.webp")),
-                right  = loadRawImageFromBytes(Res.readBytes("files/TESArena_right.webp")),
-                top    = loadRawImageFromBytes(Res.readBytes("files/TESArena_top.webp")),
-                bottom = loadRawImageFromBytes(Res.readBytes("files/TESArena_bottmo.webp")),
-            )
-        }
         val urlBoxes = remember {
             listOf<BoxTexture>(
                 BoxTextureUrls(
@@ -180,7 +189,7 @@ fun MainScreen() {
                 ),
             )
         }
-        val boxes = remember(tesArena) { listOfNotNull(tesArena) + urlBoxes }
+        val boxes = urlBoxes
         val gestureStates =
             remember(boxes.size) { mutableStateListOf(*Array(boxes.size) { false }) }
         LazyColumn(
@@ -197,20 +206,26 @@ fun MainScreen() {
                 // and restart their LaunchedEffects.
                 key = { idx -> boxes[idx].boxKey() },
             ) { idx ->
-                BigBox3D(
+                Box(
                     modifier = Modifier
                         .height(400.dp)
                         .border(1.dp, Color.Black)
                         .fillMaxWidth(),
-                    textures = boxes[idx],
-                    rotationSpeed = rotationSpeed,
-                    glossLevel = glossLevel,
-                    shadowOpacity = shadowOpacity,
-                    shadowFade = shadowFade,
-                    shadowXOffsetRatio = shadowX,
-                    shadowYOffsetRatio = shadowY,
-                    onGestureActive = { gestureStates[idx] = it },
-                )
+                ) {
+                    BigBox3D(
+                        modifier = Modifier.fillMaxSize(),
+                        textures = boxes[idx],
+                        rotationSpeed = rotationSpeed,
+                        glossLevel = glossLevel,
+                        shadowOpacity = shadowOpacity,
+                        shadowFade = shadowFade,
+                        shadowXOffsetRatio = shadowX,
+                        shadowYOffsetRatio = shadowY,
+                        onGestureActive = { gestureStates[idx] = it },
+                        onLoadingChange = progressPool.onLoadingChange(idx),
+                    )
+                    progressPool.LoadingOverlay(idx)
+                }
             }
             item { Spacer(Modifier.height(300.dp)) }
         }

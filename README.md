@@ -28,6 +28,7 @@ BigBox3D(
         // caps = CapSource.ColorFill(),
     ),
     rotationSpeed = RotationSpeed.VERY_SLOW, // NONE / VERY_SLOW / SLOW / NORMAL / FAST / VERY_FAST
+    onLoadingChange = { isLoading -> /* fires true while atlas loads, false when ready */ },
 )
 ```
 
@@ -60,6 +61,8 @@ BigBox3DProgress(
 ```
 
 When `visible` becomes `false` the render loop pauses immediately (zero GPU cost), the last frame fades out, and the composable collapses to zero size once the fade finishes.
+
+`BigBox3D` shows an empty sized box while loading (no built-in spinner). Wire `onLoadingChange` to know when each item is loading and overlay your own indicator — or use a `BigBox3DProgress` pool (see `BigBox3DProgressPool` in the demo app) so the same pre-loaded atlas is shared across loading items.
 
 ### Reusing across screens with `movableContentOf`
 

@@ -164,7 +164,7 @@ KMP Compose widget layer. Depends on `:bigbox3d-core` via `api()` (so core types
 **Data flow in `BigBox3D`:**
 1. `LaunchedEffect(textures)` resolves face images into `List<RawImage>`: for `BoxTextureUrls`, all URL fetches are fired concurrently (`async`/`coroutineScope`) on `ioDispatcher`; for `BoxRawImages`, the pre-loaded images are used directly (no network). `SideSource.Spine` generates the right face by flipping the spine image horizontally. `SideSource.ColorFill` / `CapSource.ColorFill` generate solid-color 1×1 images (auto-derived from the front image's edge average when no color is supplied — computed lazily so `edgeAverageColor()` runs at most once per load).
 2. Builds `BoxTextureAtlas` on `Dispatchers.Default` (`buildAtlas2x3` + dimension derivation). Depth inferred in priority order: side image aspect ratio → top image aspect ratio → hardcoded fallback `0.18f`. `CancellationException` is re-thrown (not swallowed) so Compose can restart the effect on key change.
-3. Passes atlas to `BigBox3DGlSurface` (expect/actual); shows `loadingContent` composable (default: `CircularProgressIndicator`) while loading. `supportsFullXAxisRotation` is always `true`.
+3. Passes atlas to `BigBox3DGlSurface` (expect/actual); shows an empty sized `Box` while loading — callers overlay their own loading content at stable call sites. `onLoadingChange: (Boolean) -> Unit` fires when loading starts/ends so callers can react. `supportsFullXAxisRotation` is always `true`.
 
 **Using bundled resources with `BoxRawImages`:** Place images in `src/commonMain/composeResources/files/` and add `compose.components.resources` to `commonMain` dependencies. Then:
 ```kotlin
@@ -174,6 +174,19 @@ BoxRawImages(
 )
 ```
 `Res` is the generated per-module object in `<packageName>.generated.resources`; import it explicitly (it is NOT in `org.jetbrains.compose.resources`). `loadRawImageFromBytes` decodes on all platforms: Android via `BitmapFactory`, JVM via Skiko, wasmJs via `data:` URL + browser `createImageBitmap`.
+
+**`BigBox3DProgress` — loading indicator composable (`BigBox3DProgress.kt`):**
+
+`BigBox3DProgress` wraps `BigBox3D` for use as a reusable loading spinner. It stays permanently in the composition so the GL state and texture atlas survive show/hide cycles with no reload.
+
+Key behaviours:
+- `paused = !visible` — render loop stops immediately when hidden (zero GPU cost)
+- Alpha fades in/out over `fadeDurationMs` (default 150 ms) using `updateTransition`
+- Size collapses to `0.dp` only after the fade-out completes — no layout space or touch interception when invisible
+
+**`movableContentOf` — reusing the same instance across screens:**
+
+`movableContentOf` tells Compose to carry the existing composition subtree (GL context, atlas, coroutines) to the new location instead of recreating it. The pool pattern in `:app`'s `BigBox3DProgressPool` extends this: N slots (backed by `BoxRawImages`) live permanently in parking spots at `visible=false`/0dp; when an item starts loading a slot moves to that item's overlay at `visible=true`. A `CompositionLocal` (`LocalPoolSlotVisible`) controls visibility based on call-site context rather than explicit state, so the same `movableContentOf` lambda works in both locations.
 
 **Web GL surface (`BigBox3DGlSurface.wasmJs.kt`):**
 - A WebGL2 `<canvas>` is appended to `<html>` (not `<body>`) with `position:fixed; pointer-events:none; z-index:1`. It must go to `<html>` because Compose MP 1.10.x sets `position:relative; overflow:hidden` on `<body>`, which causes a Firefox bug where `position:fixed` children have `offsetWidth=0` and are invisible.
@@ -195,7 +208,7 @@ BoxRawImages(
 
 | Source set | Contents |
 |------------|----------|
-| `commonMain` | `MainScreen`, `SettingsPanel`, and all UI composables — shared between Android, web, and desktop. Uses `compose.components.resources` for bundled images in `composeResources/files/`. `LazyColumn` items use `BoxTexture.boxKey()` as stable keys to prevent state reuse when the list is dynamically prepended. |
+| `commonMain` | `MainScreen`, `SettingsPanel`, and all UI composables — shared between Android, web, and desktop. Uses `compose.components.resources` for bundled images in `composeResources/files/`. `LazyColumn` items use `BoxTexture.boxKey()` as stable keys to prevent state reuse when the list is dynamically prepended. `BigBox3DProgressPool` — pool of `BigBox3DProgress` instances shared across loading items via `movableContentOf`; exposes `rememberBigBox3DProgressPool`, `ParkingSpots()`, and `LoadingOverlay(idx)`. |
 | `androidMain` | `MainActivity` (`ComponentActivity` entry point, wraps `MainScreen` in `GameBigBoxTheme`); `@Preview` composable; `GameBigBoxTheme` with Android dynamic colors |
 | `wasmJsMain` | `main()` — web entry point using `ComposeViewport(document.body!!)` wrapped in `MaterialTheme` |
 | `wasmJsMain/resources` | `index.html` — loads `app.js` (Skiko is bundled into `app.js` by webpack in Compose MP 1.10.x; the old separate `skiko.js` tag was removed) |

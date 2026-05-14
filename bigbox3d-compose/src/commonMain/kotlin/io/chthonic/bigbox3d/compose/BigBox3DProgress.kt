@@ -40,7 +40,7 @@ fun BigBox3DProgress(
     visible: Boolean,
     modifier: Modifier = Modifier,
     size: Dp = 200.dp,
-    fadeDurationMs: Int = 300,
+    fadeDurationMs: Int = 150,
     rotationSpeed: RotationSpeed = RotationSpeed.VERY_FAST,
     glossLevel: GlossLevel = GlossLevel.SEMI_GLOSS,
     shadowOpacity: ShadowOpacity = ShadowOpacity.STRONG,

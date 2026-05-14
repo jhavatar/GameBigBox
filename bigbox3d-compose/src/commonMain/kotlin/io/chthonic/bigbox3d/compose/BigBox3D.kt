@@ -1,14 +1,13 @@
 package io.chthonic.bigbox3d.compose
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import coil3.compose.LocalPlatformContext
 import io.chthonic.bigbox3d.core.BoxTextureAtlas
@@ -35,7 +34,7 @@ import kotlinx.coroutines.withContext
  * @param shadowYOffsetRatio shadow center Y offset relative to box height (+up)
  * @param paused when true the render loop is suspended — no GPU work, GL state preserved
  * @param onGestureActive fires when a touch gesture starts or ends
- * @param loadingContent composable shown while the atlas is being built; defaults to [CircularProgressIndicator]
+ * @param onLoadingChange fires with `true` when atlas loading begins and `false` when it completes or the composable leaves composition
  */
 @Composable
 fun BigBox3D(
@@ -49,10 +48,16 @@ fun BigBox3D(
     shadowXOffsetRatio: Float = 0f,
     shadowYOffsetRatio: Float = 0f,
     onGestureActive: (Boolean) -> Unit = {},
-    loadingContent: @Composable () -> Unit = { CircularProgressIndicator() },
+    onLoadingChange: (Boolean) -> Unit = {},
 ) {
     val platformContext = LocalPlatformContext.current
     var atlas by remember { mutableStateOf<BoxTextureAtlas?>(null) }
+
+    val isLoading = atlas == null
+    LaunchedEffect(isLoading) { onLoadingChange(isLoading) }
+    // Ensure the caller removes this item from its loading set if the composable leaves
+    // composition while still loading (e.g. scrolled out of a LazyColumn viewport).
+    DisposableEffect(Unit) { onDispose { onLoadingChange(false) } }
 
     LaunchedEffect(textures) {
         atlas = null
@@ -115,7 +120,7 @@ fun BigBox3D(
             shadowYOffsetRatio = shadowYOffsetRatio,
             onGestureActive = onGestureActive,
         )
-    } ?: Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        loadingContent()
-    }
+    // While loading, occupy the modifier's space but show nothing —
+    // the caller overlays loading content at a stable call site outside BigBox3D.
+    } ?: Box(modifier = modifier)
 }
