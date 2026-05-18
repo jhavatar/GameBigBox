@@ -6,6 +6,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -52,11 +53,21 @@ internal actual fun BigBox3DGlSurface(
     val device = remember {
         MTLCreateSystemDefaultDevice() ?: error("Metal is not available on this device")
     }
-    val glApi       = remember(atlas) { GlApiImpl(device) }
+    // cmdQueue and glApi depend only on the Metal device, not on the atlas.
+    // Keying them on atlas would recreate Metal pipelines, depth/stencil states, and
+    // uniform buffers unnecessarily if the atlas ever changed while composed.
+    val cmdQueue    = remember { device.newCommandQueue()!! }
+    val glApi       = remember { GlApiImpl(device, cmdQueue) }
     val renderer    = remember(atlas) { CuboidRenderer(atlas) }
-    val cmdQueue    = remember(atlas) { device.newCommandQueue()!! }
     val delegate    = remember(atlas) { BigBox3DMetalDelegate(glApi, renderer, cmdQueue) }
     val scaleFactor = remember { mutableStateOf(1f) }
+
+    // Release the previous renderer's GPU handles (VBOs, texture) from glApi when the
+    // atlas changes, and when the composable leaves composition. Without this, the old
+    // MTLBuffer/MTLTexture objects would be orphaned in glApi's handle maps.
+    DisposableEffect(atlas) {
+        onDispose { renderer.release(glApi) }
+    }
 
     renderer.rotationSpeed      = rotationSpeed
     renderer.glossLevel         = glossLevel
@@ -90,13 +101,15 @@ internal actual fun BigBox3DGlSurface(
             }
         },
         update = { view ->
-            view.delegate = delegate
-            view.setPaused(paused)
+            // Guard both calls: update runs on every recomposition (e.g. every frame during
+            // alpha animation), but delegate only changes with atlas and paused rarely changes.
+            if (view.delegate !== delegate) view.delegate = delegate
+            if (view.isPaused() != paused) view.setPaused(paused)
         },
         onRelease = { view ->
             view.setPaused(true)
             view.delegate = null
-            renderer.release(glApi)
+            // GPU resource cleanup (renderer.release) is handled by DisposableEffect.onDispose.
         },
         modifier = modifier.pointerInput(Unit) {
             val touchSlop = viewConfiguration.touchSlop
@@ -122,8 +135,11 @@ internal actual fun BigBox3DGlSurface(
                             renderer.zoomFactor = scaleFactor.value
                         }
                         event.changes.forEach { it.consume() }
-                        prevX = event.changes.map { it.position.x }.average().toFloat()
-                        prevY = event.changes.map { it.position.y }.average().toFloat()
+                        var sumX = 0f; var sumY = 0f
+                        event.changes.forEach { sumX += it.position.x; sumY += it.position.y }
+                        val count = event.changes.size
+                        prevX = sumX / count
+                        prevY = sumY / count
                         continue
                     }
 

@@ -14,6 +14,10 @@ import kotlin.coroutines.resumeWithException
 
 private const val MAX_IMAGE_PX = 1024
 
+// Cached once for the process lifetime — CGColorSpaceCreateDeviceRGB is stateless and
+// identical on every call; creating and releasing it per-decode is unnecessary overhead.
+private val deviceRGBColorSpace = CGColorSpaceCreateDeviceRGB()!!
+
 // context is unused on iOS — NSURLSession.sharedSession needs no app context
 internal actual suspend fun loadRawImageFromUrl(url: String, @Suppress("UNUSED_PARAMETER") context: PlatformContext): RawImage {
     val nsUrl = NSURL.URLWithString(url) ?: throw ImageLoadException()
@@ -30,12 +34,15 @@ internal actual suspend fun loadRawImageFromUrl(url: String, @Suppress("UNUSED_P
     return decodeNSData(data)
 }
 
-actual suspend fun loadRawImageFromBytes(bytes: ByteArray): RawImage {
-    val data = bytes.usePinned { pinned ->
-        NSData.dataWithBytes(pinned.addressOf(0), bytes.size.toULong())
+actual suspend fun loadRawImageFromBytes(bytes: ByteArray): RawImage =
+    bytes.usePinned { pinned ->
+        // dataWithBytesNoCopy avoids copying the ByteArray into a new NSData buffer.
+        // freeWhenDone=false because K/N owns the memory via usePinned.
+        // decodeNSData is called inside the block so the array stays pinned for the
+        // full UIImage.imageWithData decode, preventing a use-after-unpin.
+        val data = NSData.dataWithBytesNoCopy(pinned.addressOf(0), bytes.size.toULong(), false)!!
+        decodeNSData(data)
     }
-    return decodeNSData(data)
-}
 
 private fun decodeNSData(data: NSData): RawImage {
     val uiImage = UIImage.imageWithData(data) ?: throw ImageLoadException()
@@ -43,8 +50,7 @@ private fun decodeNSData(data: NSData): RawImage {
 }
 
 private fun renderToRawImage(uiImage: UIImage): RawImage {
-    val srcW = uiImage.size.useContents { width.toInt() }
-    val srcH = uiImage.size.useContents { height.toInt() }
+    val (srcW, srcH) = uiImage.size.useContents { width.toInt() to height.toInt() }
     if (srcW <= 0 || srcH <= 0) throw ImageLoadException()
 
     val scale = if (srcW > MAX_IMAGE_PX || srcH > MAX_IMAGE_PX)
@@ -56,7 +62,6 @@ private fun renderToRawImage(uiImage: UIImage): RawImage {
     val pixelData = ByteArray(w * h * 4)
 
     pixelData.usePinned { pinned ->
-        val colorSpace = CGColorSpaceCreateDeviceRGB() ?: throw ImageLoadException()
         // bitmapInfo = kCGImageAlphaPremultipliedLast (= 1) — RGBA8 with premultiplied alpha
         val ctx = CGBitmapContextCreate(
             data             = pinned.addressOf(0),
@@ -64,11 +69,9 @@ private fun renderToRawImage(uiImage: UIImage): RawImage {
             height           = h.toULong(),
             bitsPerComponent = 8uL,
             bytesPerRow      = (w * 4).toULong(),
-            space            = colorSpace,
+            space            = deviceRGBColorSpace,
             bitmapInfo       = 1u,
-        )
-        CGColorSpaceRelease(colorSpace)
-        if (ctx == null) throw ImageLoadException()
+        ) ?: throw ImageLoadException()
         CGContextDrawImage(ctx, CGRectMake(0.0, 0.0, w.toDouble(), h.toDouble()), cgImage)
         CGContextRelease(ctx)
     }

@@ -33,6 +33,9 @@ import platform.posix.memcpy
 //   float  _pad        offset 20
 //   float2 uSmoothStep offset 24
 
+// Kept as fallback for apps that don't bundle Shaders.metal in their Xcode project.
+// When Shaders.metal is present, device.newDefaultLibrary() loads the pre-compiled
+// version and this string is never used.
 private val MSL_SOURCE = """
 #include <metal_stdlib>
 using namespace metal;
@@ -150,6 +153,7 @@ private const val SHADOW_UNIFORM_FLOATS = 8    //  32 bytes
  */
 class GlApiImpl(
     val device: MTLDeviceProtocol,
+    private val commandQueue: MTLCommandQueueProtocol,
     colorPixelFormat: MTLPixelFormat = MTLPixelFormatBGRA8Unorm,
     depthPixelFormat: MTLPixelFormat = MTLPixelFormatDepth32Float,
 ) : GlApi {
@@ -195,8 +199,11 @@ class GlApiImpl(
     private var boundTex          = 0
     private var depthTestEnabled  = false
 
-    // attrib index → (metal-buffer handle, byte offset)
-    private val attribBindings = HashMap<Int, Pair<Int, Int>>()
+    // Issue 3: replace HashMap<Int, Pair<Int,Int>> with three parallel primitive arrays —
+    // eliminates per-draw Pair boxing and HashMap iteration overhead.
+    private val attribBufHandles = IntArray(8)
+    private val attribBufOffsets = IntArray(8)
+    private val attribActive     = BooleanArray(8)
 
     // ── Viewport ─────────────────────────────────────────────────────────────
 
@@ -217,20 +224,30 @@ class GlApiImpl(
     private var uAlpha      = 0f
     private val uSmoothStep = FloatArray(2)
 
+    // Issue 1: pre-allocated uniform staging buffers reused every frame.
+    private val mainUniformData   = FloatArray(MAIN_UNIFORM_FLOATS)
+    private val shadowUniformData = FloatArray(SHADOW_UNIFORM_FLOATS)
+
     // ── Uniform location registry ─────────────────────────────────────────────
 
     private var nextUniformLoc = 1
-    private val locToInfo = HashMap<Int, Pair<Int, String>>()   // loc → (programId, name)
-    private val infoToLoc = HashMap<Pair<Int, String>, Int>()   // (programId, name) → loc
+    // Issue 2: replace HashMap<Int, Pair<Int,String>> (boxed Int keys, per-frame lookups)
+    // with a plain array indexed by the location integer — O(1) array access, no boxing.
+    private val locNames  = arrayOfNulls<String>(64)          // index = location integer
+    private val infoToLoc = HashMap<Pair<Int, String>, Int>() // (programId, name) → loc; queried once per name
 
     // ── Init ─────────────────────────────────────────────────────────────────
 
     init {
-        library = memScoped {
-            val err = alloc<ObjCObjectVar<NSError?>>()
-            device.newLibraryWithSource(MSL_SOURCE, null, err.ptr)
-                ?: error("Metal shader compile failed: ${err.value?.localizedDescription}")
-        }
+        // Issue 5: load pre-compiled library from the app bundle when Shaders.metal is
+        // present in the Xcode project (zero startup cost); fall back to runtime compilation
+        // so the library works without that file (e.g. when consumed as a Maven dependency).
+        library = device.newDefaultLibrary()
+            ?: memScoped {
+                val err = alloc<ObjCObjectVar<NSError?>>()
+                device.newLibraryWithSource(MSL_SOURCE, null, err.ptr)
+                    ?: error("Metal shader compile failed: ${err.value?.localizedDescription}")
+            }
 
         cuboidPipeline = buildCuboidPipeline(colorPixelFormat, depthPixelFormat)
         shadowPipeline = buildShadowPipeline(colorPixelFormat, depthPixelFormat)
@@ -321,6 +338,9 @@ class GlApiImpl(
     /** Called by the surface before delegating to CuboidRenderer.onDrawFrame. */
     fun beginFrame(enc: MTLRenderCommandEncoderProtocol) {
         encoder = enc
+        // Issue 4: set winding once per frame — it never changes, so there's no need
+        // to emit this Metal command inside every glDrawElements call.
+        enc.setFrontFacingWinding(MTLWindingCounterClockwise)
         if (vpW > 0 && vpH > 0) {
             enc.setViewport(cValue {
                 originX = vpX.toDouble(); originY = vpY.toDouble()
@@ -368,18 +388,30 @@ class GlApiImpl(
             height      = height.toULong(),
             mipmapped   = false,
         )
-        val mtlTex = device.newTextureWithDescriptor(desc)!!
-        pixels.usePinned { pinned ->
-            mtlTex.replaceRegion(
-                region = cValue {
-                    origin.x = 0uL; origin.y = 0uL; origin.z = 0uL
-                    size.width = width.toULong(); size.height = height.toULong(); size.depth = 1uL
-                },
-                mipmapLevel = 0uL,
-                withBytes   = pinned.addressOf(0),
-                bytesPerRow = (width * 4).toULong(),
-            )
+        // Issue 6: private storage lets Metal place the texture in fast GPU-only memory.
+        // Upload via a shared staging buffer + async blit, ordered before any render command
+        // on the same queue so the texture is ready when the first frame draws.
+        desc.storageMode = MTLStorageModePrivate
+        val mtlTex    = device.newTextureWithDescriptor(desc)!!
+        val byteCount = (width * height * 4).toULong()
+        val staging   = pixels.usePinned { pinned ->
+            device.newBufferWithBytes(pinned.addressOf(0), byteCount, MTLResourceStorageModeShared)!!
         }
+        val cmdBuf  = commandQueue.commandBuffer()!!
+        val blitter = cmdBuf.blitCommandEncoder()!!
+        blitter.copyFromBuffer(
+            staging,
+            sourceOffset        = 0uL,
+            sourceBytesPerRow   = (width * 4).toULong(),
+            sourceBytesPerImage = byteCount,
+            sourceSize          = cValue<MTLSize> { this.width = width.toULong(); this.height = height.toULong(); depth = 1uL },
+            toTexture           = mtlTex,
+            destinationSlice    = 0uL,
+            destinationLevel    = 0uL,
+            destinationOrigin   = cValue<MTLOrigin> { x = 0uL; y = 0uL; z = 0uL },
+        )
+        blitter.endEncoding()
+        cmdBuf.commit()
         mtlTextures[boundTex] = mtlTex
     }
 
@@ -391,22 +423,21 @@ class GlApiImpl(
         val key = program to name
         return infoToLoc.getOrPut(key) {
             val loc = nextUniformLoc++
-            locToInfo[loc] = key
+            locNames[loc] = name  // Issue 2: array write instead of HashMap put
             loc
         }
     }
 
     override fun glUniformMatrix4fv(location: Int, count: Int, transpose: Boolean, value: FloatArray, offset: Int) {
-        val (_, name) = locToInfo[location] ?: return
-        when (name) {
+        // Issue 2: array lookup — no Int boxing, no HashMap overhead
+        when (locNames.getOrNull(location)) {
             "uMVP"   -> value.copyInto(uMVP,   destinationOffset = 0, startIndex = offset, endIndex = offset + 16)
             "uModel" -> value.copyInto(uModel,  destinationOffset = 0, startIndex = offset, endIndex = offset + 16)
         }
     }
 
     override fun glUniform3f(location: Int, x: Float, y: Float, z: Float) {
-        val (_, name) = locToInfo[location] ?: return
-        when (name) {
+        when (locNames.getOrNull(location)) {
             "uLightPos"   -> { uLightPos[0]   = x; uLightPos[1]   = y; uLightPos[2]   = z }
             "uViewPos"    -> { uViewPos[0]     = x; uViewPos[1]     = y; uViewPos[2]     = z }
             "uLightColor" -> { uLightColor[0]  = x; uLightColor[1]  = y; uLightColor[2]  = z }
@@ -414,8 +445,7 @@ class GlApiImpl(
     }
 
     override fun glUniform2f(location: Int, x: Float, y: Float) {
-        val (_, name) = locToInfo[location] ?: return
-        when (name) {
+        when (locNames.getOrNull(location)) {
             "uCenter"     -> { uCenter[0]     = x; uCenter[1]     = y }
             "uScale"      -> { uScale[0]      = x; uScale[1]      = y }
             "uSmoothStep" -> { uSmoothStep[0] = x; uSmoothStep[1] = y }
@@ -423,8 +453,7 @@ class GlApiImpl(
     }
 
     override fun glUniform1f(location: Int, x: Float) {
-        val (_, name) = locToInfo[location] ?: return
-        when (name) {
+        when (locNames.getOrNull(location)) {
             "uMaterialGloss" -> uGloss = x
             "uAlpha"         -> uAlpha = x
         }
@@ -459,14 +488,13 @@ class GlApiImpl(
 
     // ── GlApi — vertex attributes ─────────────────────────────────────────────
 
-    override fun glEnableVertexAttribArray(index: Int) = Unit
-
-    override fun glDisableVertexAttribArray(index: Int) { attribBindings.remove(index) }
+    // Issue 3: enable/disable/pointer all write into primitive arrays — no heap allocation.
+    override fun glEnableVertexAttribArray(index: Int)  { attribActive[index] = true  }
+    override fun glDisableVertexAttribArray(index: Int) { attribActive[index] = false }
 
     override fun glVertexAttribPointer(index: Int, size: Int, type: Int, normalized: Boolean, stride: Int, offset: Int) {
-        // Record which Metal buffer feeds this attribute slot and at what byte offset.
-        // The vertex descriptor bakes the stride/format, so only the buffer handle matters here.
-        attribBindings[index] = boundArrayBuf to offset
+        attribBufHandles[index] = boundArrayBuf
+        attribBufOffsets[index] = offset
     }
 
     // ── GlApi — drawing ───────────────────────────────────────────────────────
@@ -477,14 +505,14 @@ class GlApiImpl(
 
         enc.setRenderPipelineState(if (isCuboid) cuboidPipeline else shadowPipeline)
         enc.setDepthStencilState(if (depthTestEnabled) depthOnState else depthOffState)
-        // Geometry uses OpenGL CCW front-face convention; Metal defaults to CW, so override.
-        enc.setFrontFacingWinding(MTLWindingCounterClockwise)
+        // Issue 4: setFrontFacingWinding moved to beginFrame — not repeated here.
         enc.setCullMode(if (isCuboid) MTLCullModeBack else MTLCullModeNone)
 
-        // Bind each vertex buffer to its attribute slot (0=positions, 1=texcoords, 2=normals)
-        for ((attribIndex, binding) in attribBindings) {
-            val mtlBuf = mtlBuffers[binding.first] ?: continue
-            enc.setVertexBuffer(mtlBuf, binding.second.toULong(), attribIndex.toULong())
+        // Issue 3: iterate primitive BooleanArray — no boxing, no HashMap entry allocation.
+        for (i in attribActive.indices) {
+            if (!attribActive[i]) continue
+            val mtlBuf = mtlBuffers[attribBufHandles[i]] ?: continue
+            enc.setVertexBuffer(mtlBuf, attribBufOffsets[i].toULong(), i.toULong())
         }
 
         // Uniforms at vertex/fragment buffer slot 3
@@ -513,10 +541,11 @@ class GlApiImpl(
         enc.setDepthStencilState(depthOffState)
         enc.setCullMode(MTLCullModeNone)
 
-        // Shadow quad: only attribute slot 0
-        for ((attribIndex, binding) in attribBindings) {
-            val mtlBuf = mtlBuffers[binding.first] ?: continue
-            enc.setVertexBuffer(mtlBuf, binding.second.toULong(), attribIndex.toULong())
+        // Issue 3: iterate primitive BooleanArray — no boxing, no HashMap entry allocation.
+        for (i in attribActive.indices) {
+            if (!attribActive[i]) continue
+            val mtlBuf = mtlBuffers[attribBufHandles[i]] ?: continue
+            enc.setVertexBuffer(mtlBuf, attribBufOffsets[i].toULong(), i.toULong())
         }
 
         // Shadow uniforms at vertex/fragment buffer slot 1
@@ -566,33 +595,33 @@ class GlApiImpl(
     // ── Uniform flush ─────────────────────────────────────────────────────────
 
     private fun flushMainUniforms() {
+        // Issue 1: write into pre-allocated mainUniformData — no FloatArray allocated per frame.
         // Pack into the MainUniforms struct layout (44 floats / 176 bytes):
         //   [0..15]  uMVP
         //   [16..31] uModel
         //   [32..34] uLightPos,  [35] _pad
         //   [36..38] uViewPos,   [39] _pad
         //   [40..42] uLightColor [43] uMaterialGloss
-        val data = FloatArray(MAIN_UNIFORM_FLOATS)
-        uMVP.copyInto(data, 0)
-        uModel.copyInto(data, 16)
-        uLightPos.copyInto(data, 32);    data[35] = 0f
-        uViewPos.copyInto(data, 36);     data[39] = 0f
-        uLightColor.copyInto(data, 40);  data[43] = uGloss
-        data.usePinned { pinned ->
+        uMVP.copyInto(mainUniformData, 0)
+        uModel.copyInto(mainUniformData, 16)
+        uLightPos.copyInto(mainUniformData, 32);   mainUniformData[35] = 0f
+        uViewPos.copyInto(mainUniformData, 36);    mainUniformData[39] = 0f
+        uLightColor.copyInto(mainUniformData, 40); mainUniformData[43] = uGloss
+        mainUniformData.usePinned { pinned ->
             memcpy(mainUniformBuf.contents(), pinned.addressOf(0), (MAIN_UNIFORM_FLOATS * 4).toULong())
         }
     }
 
     private fun flushShadowUniforms() {
+        // Issue 1: write into pre-allocated shadowUniformData — no FloatArray allocated per frame.
         // Pack into the ShadowUniforms struct layout (8 floats / 32 bytes):
         //   [0..1] uCenter, [2..3] uScale, [4] uAlpha, [5] _pad, [6..7] uSmoothStep
-        val data = FloatArray(SHADOW_UNIFORM_FLOATS)
-        uCenter.copyInto(data, 0)
-        uScale.copyInto(data, 2)
-        data[4] = uAlpha
-        data[5] = 0f
-        uSmoothStep.copyInto(data, 6)
-        data.usePinned { pinned ->
+        uCenter.copyInto(shadowUniformData, 0)
+        uScale.copyInto(shadowUniformData, 2)
+        shadowUniformData[4] = uAlpha
+        shadowUniformData[5] = 0f
+        uSmoothStep.copyInto(shadowUniformData, 6)
+        shadowUniformData.usePinned { pinned ->
             memcpy(shadowUniformBuf.contents(), pinned.addressOf(0), (SHADOW_UNIFORM_FLOATS * 4).toULong())
         }
     }

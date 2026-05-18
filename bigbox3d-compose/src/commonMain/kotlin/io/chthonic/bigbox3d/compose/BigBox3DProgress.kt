@@ -5,7 +5,12 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.Dp
@@ -46,7 +51,23 @@ fun BigBox3DProgress(
     shadowOpacity: ShadowOpacity = ShadowOpacity.STRONG,
     shadowFade: ShadowFade = ShadowFade.REALISTIC,
 ) {
-    val transition = updateTransition(visible, label = "BigBox3DProgress")
+    // On iOS, movableContentOf slots cross a SubcomposeLayout boundary (LazyColumn) when
+    // moving between ParkingSpots and LoadingOverlay. In the same frame that the slot is
+    // deactivated at the old location, visible changes — which would immediately invalidate
+    // the .size() modifier and schedule a remeasure. The Metal DisplayLink can fire
+    // measureAndLayout during the brief gap before the slot is re-activated at the new
+    // location, causing "measure is called on a deactivated node".
+    //
+    // Delaying all layout-affecting state by one frame (withFrameNanos) ensures the slot
+    // has fully settled at its new position before any remeasure is scheduled. The 16 ms
+    // delay is imperceptible to users.
+    var layoutVisible by remember { mutableStateOf(visible) }
+    LaunchedEffect(visible) {
+        withFrameNanos { }
+        layoutVisible = visible
+    }
+
+    val transition = updateTransition(layoutVisible, label = "BigBox3DProgress")
     val alpha by transition.animateFloat(
         transitionSpec = { tween(fadeDurationMs) },
         label = "alpha",
@@ -55,13 +76,13 @@ fun BigBox3DProgress(
 
     BigBox3D(
         textures = textures,
-        paused = !visible,
+        paused = !layoutVisible,
         rotationSpeed = rotationSpeed,
         glossLevel = glossLevel,
         shadowOpacity = shadowOpacity,
         shadowFade = shadowFade,
         modifier = modifier
-            .size(if (visible || isAnimating) size else 0.dp)
+            .size(if (layoutVisible || isAnimating) size else 0.dp)
             .alpha(alpha),
     )
 }

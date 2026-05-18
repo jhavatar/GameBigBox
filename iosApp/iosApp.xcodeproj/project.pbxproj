@@ -11,6 +11,7 @@
 		GBB00000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = GBB00000011 /* ContentView.swift */; };
 		GBB00000003 /* GameBigBox.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = GBB00000012 /* GameBigBox.xcframework */; };
 		GBB00000004 /* GameBigBox.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = GBB00000012 /* GameBigBox.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		GBB00000006 /* Shaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = GBB00000016 /* Shaders.metal */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -33,6 +34,7 @@
 		GBB00000012 /* GameBigBox.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = GameBigBox.xcframework; path = ../app/build/XCFrameworks/debug/GameBigBox.xcframework; sourceTree = "<group>"; };
 		GBB00000013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		GBB00000014 /* iosApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iosApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		GBB00000016 /* Shaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Shaders.metal; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -62,6 +64,7 @@
 				GBB00000010 /* iOSApp.swift */,
 				GBB00000011 /* ContentView.swift */,
 				GBB00000013 /* Info.plist */,
+				GBB00000016 /* Shaders.metal */,
 			);
 			path = iosApp;
 			sourceTree = "<group>";
@@ -175,6 +178,7 @@
 			files = (
 				GBB00000001 /* iOSApp.swift in Sources */,
 				GBB00000002 /* ContentView.swift in Sources */,
+				GBB00000006 /* Shaders.metal in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
