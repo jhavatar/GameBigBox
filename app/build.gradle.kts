@@ -1,5 +1,6 @@
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -22,6 +23,15 @@ kotlin {
     }
 
     jvm()
+
+    val xcf = XCFramework("GameBigBox")
+    listOf(iosArm64(), iosX64(), iosSimulatorArm64()).forEach { target ->
+        target.binaries.framework {
+            baseName = "GameBigBox"
+            isStatic = true
+            xcf.add(this)
+        }
+    }
 
     sourceSets {
         commonMain.dependencies {

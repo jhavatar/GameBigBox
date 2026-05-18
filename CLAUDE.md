@@ -7,10 +7,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 GameBigBox is a Kotlin Multiplatform project that provides a `BigBox3D` Compose widget rendering a 3D textured cuboid (a physical PC game "big box") via OpenGL ES 3.0 on Android and WebGL2 on web. Touch/mouse gestures support rotation and scroll/pinch-to-zoom.
 
 - **Language:** Kotlin 2.3.21 | **minSdk:** 26 | **compileSdk:** 36
-- **Build:** KMP (`kotlin("multiplatform")`) — `androidTarget()` + `wasmJs { browser() }` on library/app modules; `jvm()` on `:bigbox3d-core`, `:bigbox3d-compose`, and `:app`
-- **UI:** Compose Multiplatform 1.10.3 + Material3; GL surface embedded via `AndroidView` on Android, WebGL canvas overlay on web
-- **Rendering:** OpenGL ES 3.0 (`GLSurfaceView`) on Android; WebGL2 on web. All rendering goes through the platform-agnostic `GlApi` interface using VBOs.
-- **Image loading:** Coil 3.4.0 on Android (OkHttp network fetcher); Skiko `Image.makeFromEncoded` on JVM (handles WebP); browser `fetch` → `createImageBitmap` → `OffscreenCanvas` on web
+- **Build:** KMP (`kotlin("multiplatform")`) — `androidTarget()` + `wasmJs { browser() }` on library/app modules; `jvm()` + `iosArm64()` + `iosX64()` + `iosSimulatorArm64()` on `:bigbox3d-core`, `:bigbox3d-compose`, and `:app`
+- **UI:** Compose Multiplatform 1.10.3 + Material3; GL surface embedded via `AndroidView` on Android, WebGL canvas overlay on web, `MTKView` via `UIKitView` on iOS
+- **Rendering:** OpenGL ES 3.0 (`GLSurfaceView`) on Android; WebGL2 on web; Metal (MSL shaders, `MTLRenderCommandEncoder`) on iOS. All rendering goes through the platform-agnostic `GlApi` interface using VBOs.
+- **Image loading:** Coil 3.4.0 on Android (OkHttp network fetcher); Skiko `Image.makeFromEncoded` on JVM (handles WebP); browser `fetch` → `createImageBitmap` → `OffscreenCanvas` on web; `NSURLSession` + `CGBitmapContext` on iOS
 
 ## Source Layout
 
@@ -32,10 +32,10 @@ src/
 
 | Module | Type | Purpose |
 |--------|------|---------|
-| `:bigbox3d-core` | KMP library (Android + wasmJs + JVM) | All 3D logic — GL abstraction, geometry, atlas building, rendering |
-| `:bigbox3d-compose` | KMP Compose library (Android + wasmJs + JVM) | `BigBox3D` Compose widget; image loading; platform GL surface |
+| `:bigbox3d-core` | KMP library (Android + wasmJs + JVM + iOS) | All 3D logic — GL abstraction, geometry, atlas building, rendering |
+| `:bigbox3d-compose` | KMP Compose library (Android + wasmJs + JVM + iOS) | `BigBox3D` Compose widget; image loading; platform GL surface |
 | `:opengl3` | Android library (legacy) | Original self-contained Android implementation; still published to JitPack |
-| `:app` | KMP app (Android + wasmJs + JVM) | Demo app showing multiple `BigBox3D` widgets with a live `SettingsPanel` |
+| `:app` | KMP app (Android + wasmJs + JVM + iOS) | Demo app showing multiple `BigBox3D` widgets with a live `SettingsPanel` |
 
 ## Common Commands
 
@@ -46,6 +46,7 @@ src/
 | **Android** | `./gradlew :app:installDebug` then `adb shell am start -n io.chthonic.gamebigbox/.MainActivity` | Requires a connected device or running emulator |
 | **Web** | `./gradlew :app:wasmJsBrowserDevelopmentRun` | Starts a dev server and opens `http://localhost:8080` automatically |
 | **Desktop (JVM)** | `./gradlew :app:run` | Opens a 520×900 dp native window via Compose Desktop |
+| **iOS** | `./gradlew clean :app:assembleGameBigBoxDebugXCFramework` then open `iosApp/iosApp.xcodeproj` in Xcode and press ▶ | Requires Xcode on macOS; builds the Kotlin XCFramework then Xcode compiles the Swift wrapper and runs on device/simulator |
 
 ### Build
 
@@ -140,6 +141,7 @@ Pure KMP — zero platform imports in `commonMain`.
 | `androidMain` | `GlApiImpl` — thin delegation of every `GlApi` call to `GLES30.*` |
 | `wasmJsMain` | `WebGl2Ctx` external interface (WebGL2 method declarations); `GlApiImpl(gl: WebGl2Ctx)` — maps OpenGL integer handles to WebGL JS objects via internal maps |
 | `jvmMain` | `GlApiImpl` — delegates to LWJGL3 (`org.lwjgl.opengl.GL11`/`GL15`/`GL20`); uses `MemoryStack` for zero-GC buffer allocation on VBO uploads and uniform calls |
+| `iosMain` | `GlApiImpl(device: MTLDeviceProtocol)` — Metal backend. Two MSL pipelines compiled at init from an embedded source string; GLSL is ignored. OpenGL integer handles mapped to `MTLBuffer`/`MTLTexture`. Uniforms packed into `float4`-based structs (MSL `float3` has size 16 in structs). `glDrawElements`/`glDrawArrays` encode a Metal render command using the accumulated state. `isGlEs()` returns `true` (selects the `#version 300 es` shader preamble path). |
 
 **Key design decisions:**
 - `RawImage(width, height, pixels: ByteArray)` replaces `android.graphics.Bitmap` — no platform types in common code
@@ -160,6 +162,7 @@ KMP Compose widget layer. Depends on `:bigbox3d-core` via `api()` (so core types
 | `androidMain` | `actual BigBox3DGlSurface` — `GLSurfaceView` in `AndroidView`, bridges `Renderer` callbacks to `CuboidRenderer`; gestures handled via `Modifier.pointerInput` (horizontal drag = rotate, vertical passes to `LazyColumn` for scroll, pinch = zoom); `actual loadRawImageFromUrl` — Coil 3 → `BitmapImage` → ARGB→RGBA extraction; `actual ioDispatcher = Dispatchers.IO`; internet permission in manifest |
 | `wasmJsMain` | `actual BigBox3DGlSurface` — creates a WebGL `<canvas>` appended to `<html>` (not `<body>`) with `position:fixed; pointer-events:none; z-index:1`; gestures handled via `Modifier.pointerInput` on the Box (drag = rotate; scroll = LazyColumn; scroll over stationary box = zoom via 300 ms debounce); `onSurfaceCreated` called after first `jsResizeCanvas` due to WebGL context-reset behaviour; `localToWindow(Offset.Zero)` + `coords.size` gives full composable dimensions during scroll; `actual loadRawImageFromUrl` — browser `fetch` → `createImageBitmap` → `OffscreenCanvas` → `getImageData` pixels; `actual ioDispatcher = Dispatchers.Default` |
 | `jvmMain` | `actual BigBox3DGlSurface` — CGL headless context (macOS) or GLFW hidden window (Linux/Windows) → FBO → `glReadPixels` → Y-flip → `BufferedImage.toComposeImageBitmap()`, displayed via Compose `Image`; render loop via `withFrameNanos`; drag/scroll gestures via `pointerInput`; VAO bound before `onSurfaceCreated`; `actual loadRawImageFromUrl` — Skiko `Image.makeFromEncoded` (handles WebP) → `Surface` → pixel readback; `actual ioDispatcher = Dispatchers.IO` |
+| `iosMain` | `actual BigBox3DGlSurface` — `MTKView` embedded via `UIKitView`; `BigBox3DMetalDelegate` (`MTKViewDelegateProtocol`) drives `onSurfaceCreated`/`onSurfaceChanged`/`onDrawFrame`; gestures via `Modifier.pointerInput` (horizontal drag = rotate, vertical = pass to LazyColumn, pinch = zoom); `actual loadRawImageFromUrl` — `NSURLSession` → `UIImage` → `CGBitmapContext` RGBA readback; `actual ioDispatcher = Dispatchers.IO` |
 
 **Data flow in `BigBox3D`:**
 1. `LaunchedEffect(textures)` resolves face images into `List<RawImage>`: for `BoxTextureUrls`, all URL fetches are fired concurrently (`async`/`coroutineScope`) on `ioDispatcher`; for `BoxRawImages`, the pre-loaded images are used directly (no network). `SideSource.Spine` generates the right face by flipping the spine image horizontally. `SideSource.ColorFill` / `CapSource.ColorFill` generate solid-color 1×1 images (auto-derived from the front image's edge average when no color is supplied — computed lazily so `edgeAverageColor()` runs at most once per load).
@@ -189,10 +192,10 @@ Key behaviours:
 `movableContentOf` tells Compose to carry the existing composition subtree (GL context, atlas, coroutines) to the new location instead of recreating it. The pool pattern in `:app`'s `BigBox3DProgressPool` extends this: N slots (backed by `BoxRawImages`) live permanently in parking spots at `visible=false`/0dp; when an item starts loading a slot moves to that item's overlay at `visible=true`. A `CompositionLocal` (`LocalPoolSlotVisible`) controls visibility based on call-site context rather than explicit state, so the same `movableContentOf` lambda works in both locations.
 
 **Web GL surface (`BigBox3DGlSurface.wasmJs.kt`):**
-- A WebGL2 `<canvas>` is appended to `<html>` (not `<body>`) with `position:fixed; pointer-events:none; z-index:1`. It must go to `<html>` because Compose MP 1.10.x sets `position:relative; overflow:hidden` on `<body>`, which causes a Firefox bug where `position:fixed` children have `offsetWidth=0` and are invisible.
+- A WebGL2 `<canvas>` is appended to `<html>` (not `<body>`) with `position:fixed; pointer-events:none; z-index:1`. It must go to `<html>` because Compose MP 1.10.3 sets `position:relative; overflow:hidden` on `<body>`, which causes a Firefox bug where `position:fixed` children have `offsetWidth=0` and are invisible.
 - `pointer-events:none` on the canvas lets all pointer events pass through to Compose, so the `LazyColumn` can scroll freely and `Modifier.pointerInput` on the placeholder `Box` handles gestures.
 - Positioning uses `coords.localToWindow(Offset.Zero)` (true origin, can be negative when scrolled off-screen) and `coords.size` (full composable dimensions, not clipped by viewport). This keeps the canvas full-size as it scrolls partially off-screen.
-- `onSurfaceCreated` is called inside `onGloballyPositioned` — AFTER `jsResizeCanvas` — because `canvas.width/height` changes reset the WebGL context (wiping all GL state). In Compose MP 1.10.x, `DisposableEffect` runs before `onGloballyPositioned`, so initialising GL in `DisposableEffect` and then resizing would lose all GL resources.
+- `onSurfaceCreated` is called inside `onGloballyPositioned` — AFTER `jsResizeCanvas` — because `canvas.width/height` changes reset the WebGL context (wiping all GL state). In Compose MP 1.10.3, `DisposableEffect` runs before `onGloballyPositioned`, so initialising GL in `DisposableEffect` and then resizing would lose all GL resources.
 - The render loop is a `LaunchedEffect` using `withFrameNanos { }` (backs onto `requestAnimationFrame`). It only draws when `glReady` is true (after the first resize + `onSurfaceCreated`).
 - Scroll-wheel zoom uses a 300 ms debounce: if scroll events arrive faster than 300 ms apart the box is deemed "in list-scroll motion" and zoom is suppressed; once quiescent, the next wheel tick zooms.
 
@@ -211,7 +214,7 @@ Key behaviours:
 | `commonMain` | `MainScreen`, `SettingsPanel`, and all UI composables — shared between Android, web, and desktop. Uses `compose.components.resources` for bundled images in `composeResources/files/`. `LazyColumn` items use `BoxTexture.boxKey()` as stable keys to prevent state reuse when the list is dynamically prepended. `BigBox3DProgressPool` — pool of `BigBox3DProgress` instances shared across loading items via `movableContentOf`; exposes `rememberBigBox3DProgressPool`, `ParkingSpots()`, and `LoadingOverlay(idx)`. |
 | `androidMain` | `MainActivity` (`ComponentActivity` entry point, wraps `MainScreen` in `GameBigBoxTheme`); `@Preview` composable; `GameBigBoxTheme` with Android dynamic colors |
 | `wasmJsMain` | `main()` — web entry point using `ComposeViewport(document.body!!)` wrapped in `MaterialTheme` |
-| `wasmJsMain/resources` | `index.html` — loads `app.js` (Skiko is bundled into `app.js` by webpack in Compose MP 1.10.x; the old separate `skiko.js` tag was removed) |
+| `wasmJsMain/resources` | `index.html` — loads `app.js` (Skiko is bundled into `app.js` by webpack in Compose MP 1.10.3; the old separate `skiko.js` tag was removed) |
 | `jvmMain` | `main()` — desktop entry point using `singleWindowApplication` (520×900 dp) wrapped in `MaterialTheme`; LWJGL native jars for all platforms added as `runtimeOnly`; `compose.desktop.currentOs` provides the Compose Desktop runtime |
 
 ### `:opengl3` (legacy)
@@ -265,6 +268,34 @@ To add desktop or another platform, these files are needed:
 
 All four steps are complete. `:bigbox3d-core`, `:bigbox3d-compose`, and `:app` all have `jvm()` targets. Run the demo with `./gradlew :app:run`.
 
+### iOS/Metal status
+
+All four steps are complete. `:bigbox3d-core`, `:bigbox3d-compose`, and `:app` all have `iosArm64()`, `iosX64()`, and `iosSimulatorArm64()` targets.
+
+**Rendering approach:** The iOS `GlApiImpl` emulates the `GlApi` state machine using Metal. The GLSL shaders are replaced by two pre-compiled MSL pipelines (cuboid + shadow) compiled at init from an embedded MSL source string via `device.newLibraryWithSource`. The OpenGL program/buffer/texture integer handles are mapped to `MTLBuffer`/`MTLTexture` objects. Uniforms are packed into `float4`-aligned structs (note: MSL `float3` in a struct has size 16, not 12 — all vec3 uniforms use `float4` with `.xyz` swizzle). The `BigBox3DGlSurface` embeds an `MTKView` via `UIKitView`, driven by `MTKViewDelegateProtocol`.
+
+**Xcode project:** `iosApp/iosApp.xcodeproj` — a minimal single-target Xcode project. A shell script build phase runs `./gradlew :app:assembleGameBigBoxDebugXCFramework` (or Release) each build. The Swift entry point in `iOSApp.swift` uses SwiftUI `@main` + `UIViewControllerRepresentable` wrapping `MainKt.MainViewController()`.
+
+**iOS `main.kt` entry point:**
+```kotlin
+fun MainViewController(): UIViewController = ComposeUIViewController(
+    configure = { enforceStrictPlistSanityCheck = false }
+) {
+    MaterialTheme {
+        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+            MainScreen()
+        }
+    }
+}
+```
+The `Surface` fill ensures safe-area regions (status bar, home indicator) show the theme's surface colour instead of a transparent/dark canvas.
+
+**iOS rebuild workflow:** After any Kotlin change, you must do a **full clean** before rebuilding the XCFramework — incremental Gradle builds will not recompile changed modules:
+```bash
+./gradlew clean :app:assembleGameBigBoxDebugXCFramework
+```
+Then in Xcode: **Product → Clean Build Folder** (⌘⇧K) → ▶
+
 **Rendering approach:** The JVM `BigBox3DGlSurface` obtains an OpenGL core-profile context (see GL context below), renders into an FBO sized to the Compose layout bounds, reads back pixels with `glReadPixels`, flips the Y-axis (OpenGL is bottom-up), converts to a `BufferedImage` → `ImageBitmap`, and displays via a Compose `Image` composable. The render loop is driven by `withFrameNanos`. Each widget instance has its own dedicated single-threaded coroutine dispatcher and GL context.
 
 **GL context creation (platform-specific):**
@@ -283,8 +314,10 @@ All four steps are complete. `:bigbox3d-core`, `:bigbox3d-compose`, and `:app` a
 - Internal class `EquitorialBoxTextureBitmaps` in `:opengl3` contains a typo ("Equitorial") — the public `EquatorialBoxTextureUrls` in that module is spelled correctly. Note: `:bigbox3d-compose` has replaced its own `FullBoxTextureUrls`/`EquatorialBoxTextureUrls` with the composable `BoxTextureUrls` + `SideSource` + `CapSource` types; `:opengl3` retains its own independent hierarchy.
 - The Kotlin/Wasm stdlib's `WebGL2RenderingContext` binding is incomplete (many methods missing). The `WebGl2Ctx` custom `external interface` in `bigbox3d-core:wasmJsMain` works around this.
 - The web `BigBox3DGlSurface` overlays a `position:fixed; pointer-events:none` canvas on `<html>`. Multiple `BigBox3D` widgets produce independent canvases at `z-index:1`. Because `pointer-events:none`, all gestures are routed through Compose's pointer system on the Box placeholder beneath.
-- Android gesture handling uses `Modifier.pointerInput` on the `AndroidView` (not a native `OnTouchListener`). Horizontal-dominant drags rotate the box; vertical-dominant drags are released to the `LazyColumn` for scroll; pinch zooms. The old `requestDisallowInterceptTouchEvent` approach broke in Compose MP 1.10.x because Compose's pointer-input scroll system no longer honours it from a native child view.
+- Android gesture handling uses `Modifier.pointerInput` on the `AndroidView` (not a native `OnTouchListener`). Horizontal-dominant drags rotate the box; vertical-dominant drags are released to the `LazyColumn` for scroll; pinch zooms. The old `requestDisallowInterceptTouchEvent` approach broke in Compose MP 1.10.3 because Compose's pointer-input scroll system no longer honours it from a native child view.
 - `BackHandler` (collapse bottom sheet on Android back press) was removed from `MainScreen` when it moved to `commonMain`. It can be re-added via an `expect`/`actual` if needed.
 - Pinch-to-zoom on web touch screens is not yet implemented. Mouse-wheel zoom works when the list is stationary (suppressed during list scroll via a 300 ms debounce).
 - Desktop/JVM platform consumers must add LWJGL3 native jars as `runtimeOnly` dependencies — the libraries ship only the binding JARs. Required natives: `org.lwjgl:lwjgl:3.4.1:natives-<platform>`, `org.lwjgl:lwjgl-opengl:3.4.1:natives-<platform>`, and `org.lwjgl:lwjgl-glfw:3.4.1:natives-<platform>` (GLFW natives are only needed on Linux/Windows; macOS uses CGL).
 - On macOS, `glfwInit()` crashes with `SIGILL` in `libdispatch.dylib` (`_dispatch_assert_queue_fail`) when called from any non-main thread, including the AWT EDT, because GLFW's macOS path calls HIToolbox's Text Services Manager which asserts the GCD main queue. The JVM implementation bypasses this entirely by using CGL on macOS.
+- **iOS — black background behind 3D box:** The transparent areas of the Metal surface (where the clear colour should be alpha=0) render as opaque black instead of showing the Compose canvas content behind the `UIKitView`. Root cause not yet resolved — the K/N `cValue<MTLClearColor>` property setter may not be invoking the ObjC setter, and/or Compose MP 1.10.3's `UIKitView` does not expose a `background` parameter to control the interop container's colour. The `UIKitView` `background = Color.Transparent` parameter does not exist in Compose MP 1.10.3.
+- **iOS — `UIKitView` gesture handling:** Horizontal-dominant single-finger drags rotate the box; vertical-dominant drags pass to the `LazyColumn` for scroll; two-finger pinch zooms. Pinch-to-zoom on iOS touch screens works (unlike web where only mouse-wheel is supported).

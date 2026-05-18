@@ -25,6 +25,10 @@ kotlin {
 
     jvm()
 
+    iosArm64()
+    iosX64()
+    iosSimulatorArm64()
+
     sourceSets {
         androidMain.dependencies {
             // GLES30 comes from the Android SDK — no extra dependency needed
@@ -38,6 +42,7 @@ kotlin {
             implementation(libs.lwjgl)
             implementation(libs.lwjgl.opengl)
         }
+        // iosMain depends on nothing extra — Metal is part of the iOS SDK
     }
 }
 

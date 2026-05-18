@@ -3,7 +3,7 @@
 Kotlin Compose UI widget that renders the big box of a PC game in 3D, e.g. 
 <video src="https://github.com/user-attachments/assets/f829a1c2-ae13-4440-8c33-60e931a3c7bb" controls></video>
 
-KMP library with targets (currently): Android, Web, JVM/Desktop. See more info in CLAUDE.md.
+KMP library with targets (currently): Android, Web, JVM/Desktop, iOS. See more info in CLAUDE.md.
 
 ## KMP library usage
 
